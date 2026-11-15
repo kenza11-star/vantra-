@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.mandatorySystemGestures
@@ -67,6 +68,7 @@ internal fun TerminalFrame(rotated: Boolean, preview: Boolean, modifier: Modifie
 }
 
 /** Stable system bars + current cutouts/mandatory gestures mapped into the rotated local axes. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun terminalInsets(rotated: Boolean): StyleInsets {
     val density=LocalDensity.current
