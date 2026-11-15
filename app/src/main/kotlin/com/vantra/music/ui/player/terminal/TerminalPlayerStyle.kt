@@ -243,6 +243,7 @@ private class SceneState {
     val cursor = TerminalCursor()
     val scroll = Spring()
     val codeCaret = TerminalCodeCaret()
+    val clock = TerminalPlayClock()
     var typingTimeline: TerminalTypingTimeline? = null
     var typingTimeMs = 0L
     var typingSpeed = 1f
@@ -421,7 +422,10 @@ private fun TerminalScene(
                                 val docChanged = s.document !== activeDoc
                                 s.sync.react(stepDt, playing, enabled, !activeDoc.isEmpty, heard)
                                 if (source.value != s.sync.source) source.value = s.sync.source
-                                val lyricMs = posMs + conn.lyricsOffsetMs.value.toLong()
+                                // Typing runs on a steady display-rate clock, not the player's stepped position.
+                                val steadyMs = s.clock.update(transportDt, posMs, playing,
+                                    if (casting) 1f else player.playbackParameters.speed, s.sync.timelineJump)
+                                val lyricMs = steadyMs + conn.lyricsOffsetMs.value.toLong()
                                 activeDoc.locate(lyricMs, prefs.typing && !reduced, s.cursor)
                                 s.typingTimeline = if(activeDoc === docNow) typingNow else missingTypingNow
                                 s.typingTimeMs = lyricMs

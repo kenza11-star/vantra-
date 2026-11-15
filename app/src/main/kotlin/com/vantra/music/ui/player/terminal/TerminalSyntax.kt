@@ -22,7 +22,7 @@ internal object TerminalPalette {
     /** the song's own words: high-contrast neutral ink, distinct from syntax colours */
     const val Lyric = 0xFFF5F7FA.toInt()
     const val Gutter = 0xFF5B6370.toInt()
-    const val Cursor = 0xFFE8EDF2.toInt()
+    const val Cursor = 0xFF8BE9FD.toInt()
     const val Glow = 0xFFFF8A3D.toInt()
 
     /** nested brackets cycle through these, by depth */

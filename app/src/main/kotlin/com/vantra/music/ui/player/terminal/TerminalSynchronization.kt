@@ -78,3 +78,34 @@ internal class TerminalBlockTransition {
         spring.step(dt, 1f, 100f, 20f)
     }
 }
+
+/**
+ * The position the typing is driven by. A player reports its position in coarse steps (one audio
+ * buffer at a time), so reading it directly makes letters arrive in clumps. This clock free-runs on
+ * frame time and is pulled gently towards the reported value, so letters land evenly at the display
+ * rate. Seeks, track changes, pauses and big errors snap straight to the reported position.
+ */
+internal class TerminalPlayClock {
+    private var value = 0f
+    private var primed = false
+
+    fun update(dt: Float, reportedMs: Long, playing: Boolean, speed: Float, jump: Boolean): Long {
+        val reported = reportedMs.toFloat()
+        if (!primed || jump || !playing) {
+            value = reported
+            primed = true
+            return reportedMs
+        }
+        val step = dt.coerceIn(0f, 0.1f) * 1000f * speed.coerceIn(0.25f, 4f)
+        val before = value
+        val free = before + step
+        if (abs(reported - free) > 250f) {
+            value = reported
+            return reportedMs
+        }
+        val pulled = free + (reported - free) * (1f - exp(-dt.coerceIn(0f, 0.1f) / 0.15f))
+        // Time never runs backwards: a late report slows the clock down instead of rewinding it.
+        value = max(pulled, before + step * 0.25f)
+        return value.toLong()
+    }
+}

@@ -162,4 +162,45 @@ class TerminalEnhancedTest {
         }
         assertEquals(0.075f,c.emotionalDolly.value,0.0001f)
     }
+
+    @Test fun wordsAreTypedAtAHumanPaceNotInABurst() {
+        val d=doc();val t=TerminalTypingTimeline(d);val r=d.lines[0].lyricFirst
+        val to=d.rows[r].lyricTo
+        var done=-1L
+        for(ms in 1000L..5000L step 5) if(t.visibleChars(r,ms,1f,true)>=to) { done=ms;break }
+        assertTrue("words never finished",done>0)
+        assertTrue("typed too fast: ${done-1000}ms",done-1000>=450)
+        assertTrue("must finish before the next line starts",done<5000)
+    }
+
+    @Test fun keyInFlightFadesInBetweenWholeCharacters() {
+        val d=doc();val t=TerminalTypingTimeline(d);val c=TerminalCodeCaret()
+        var sawFraction=false;var last=-1
+        for(ms in 1000L..2500L) {
+            t.locate(ms,1f,true,c)
+            assertTrue(c.next>=c.col)
+            assertTrue(c.frac in 0f..1f)
+            if(c.next>c.col && c.frac>0.05f && c.frac<0.95f) sawFraction=true
+            if(c.row==d.lines[0].lyricFirst) { assertTrue(c.col>=last);last=c.col }
+        }
+        assertTrue("no letter was ever caught mid-stroke",sawFraction)
+        t.locate(1400,1f,false,c)
+        assertEquals(c.col,c.next);assertEquals(1f,c.frac,0f)
+    }
+
+    @Test fun playClockRunsSteadilyBetweenCoarsePositionReports() {
+        val c=TerminalPlayClock()
+        assertEquals(1000L,c.update(0.016f,1000L,true,1f,true))
+        var reported=1000L;var last=1000L;var biggest=0L
+        for(frame in 1..120) {
+            // the player only reports every 5th frame, in 80 ms steps
+            if(frame%5==0) reported+=80
+            val v=c.update(0.016f,reported,true,1f,false)
+            assertTrue(v>=last);biggest=maxOf(biggest,v-last);last=v
+        }
+        assertTrue("steps must stay small: $biggest",biggest<=40)
+        assertTrue(kotlin.math.abs(last-reported)<120)
+        assertEquals(5000L,c.update(0.016f,5000L,false,1f,false))
+        assertEquals(9000L,c.update(0.016f,9000L,true,1f,false))
+    }
 }

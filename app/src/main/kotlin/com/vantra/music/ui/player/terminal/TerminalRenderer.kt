@@ -1,10 +1,14 @@
 package com.vantra.music.ui.player.terminal
 
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.Typeface
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
@@ -23,6 +27,13 @@ internal class TerminalRenderer {
     }
     private val fill = Paint()
     private val guide = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val backdrop = Paint()
+    private val vignette = Paint()
+    private val band = Paint()
+    private var shadedW = 0
+    private var shadedH = 0
+    private var bandLeft = -1f
+    private var bandRight = -1f
     private val matrix = Matrix()
     private val src = FloatArray(8)
     private val dst = FloatArray(8)
@@ -90,7 +101,25 @@ internal class TerminalRenderer {
         rowHeight = max(lyric.fontSpacing * 1.18f, lyric.textSize * 1.48f)
         baseline = (rowHeight - (lyric.descent() - lyric.ascent())) / 2f - lyric.ascent()
         guide.strokeWidth = max(1f, density * 0.5f)
+        shade()
         return columnCount
+    }
+
+    /** Gradient shaders are rebuilt only when the size or the page geometry changes, never per frame. */
+    private fun shade() {
+        if (width > 0 && height > 0 && (shadedW != width || shadedH != height)) {
+            shadedW = width; shadedH = height
+            backdrop.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
+                0xFF0C121B.toInt(), 0xFF04060A.toInt(), Shader.TileMode.CLAMP)
+            vignette.shader = RadialGradient(width / 2f, height / 2f, max(width, height) * 0.72f,
+                intArrayOf(0x00000000, 0x00000000, 0x8C000000.toInt()),
+                floatArrayOf(0f, 0.58f, 1f), Shader.TileMode.CLAMP)
+        }
+        if (bandLeft != gutter || bandRight != pageWidth) {
+            bandLeft = gutter; bandRight = pageWidth
+            band.shader = LinearGradient(gutter, 0f, pageWidth, 0f,
+                0x388BE9FD.toInt(), 0x068BE9FD.toInt(), Shader.TileMode.CLAMP)
+        }
     }
 
     /** Conservative cell width for document wrapping, including Android's actual fallback fonts. */
@@ -115,7 +144,8 @@ internal class TerminalRenderer {
         typingTimeline = typing; typingTimeMs = typingPositionMs; typingRate = typingSpeed; typingOn = typingEnabled
         val save = canvas.save()
         try {
-            canvas.drawColor(android.graphics.Color.BLACK)
+            if (width > 0 && height > 0) canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backdrop)
+            else canvas.drawColor(android.graphics.Color.BLACK)
             if (width <= 0 || height <= 0 || charW <= 0f) return
             val resetMotion = generation != motionGeneration
             motionGeneration = generation
@@ -168,11 +198,10 @@ internal class TerminalRenderer {
             val pageBottom = max(height.toFloat(), activeBottom)
             canvas.clipRect(0f, pageTop, pageWidth, pageBottom)
             // A dark editor backing prevents rear code from competing with real words.
-            fill.color = color(0x000000, 0.92f)
+            fill.color = color(0x070A10, 0.95f)
             canvas.drawRect(0f, pageTop, pageWidth, pageBottom, fill)
             guide.color = 0xFF20252B.toInt()
             canvas.drawLine(gutter, 0f, gutter, height.toFloat(), guide)
-            val blink = solidCursor || ((timeNs / BlinkNs) and 1L) == 0L
             for (slot in viewport.indices) {
                 val r = viewport[slot]
                 val row = doc.rows[r]
@@ -185,8 +214,9 @@ internal class TerminalRenderer {
                 val previous = row.line == previousLine && previousLine >= 0
                 if (activeLyric || (previous && row.kind == KindLyric)) {
                     val emphasis = if (activeLyric) mix else 1f - mix
-                    fill.color = color(0xFFFFFF, (0.055f + 0.02f * (if (low) 0f else glowLevel.coerceIn(0f, 1f))) * emphasis)
-                    canvas.drawRect(gutter + density, top, pageWidth, top + rowHeight, fill)
+                    band.alpha = ((0.8f + 0.2f * (if (low) 0f else glowLevel.coerceIn(0f, 1f))) * emphasis * 255f)
+                        .toInt().coerceIn(0, 255)
+                    canvas.drawRect(gutter + density, top, pageWidth, top + rowHeight, band)
                     fill.color = color(TerminalPalette.Cursor, emphasis)
                     canvas.drawRect(gutter + density, top + 3f * density, gutter + 2.5f * density, top + rowHeight - 3f * density, fill)
                 }
@@ -204,10 +234,14 @@ internal class TerminalRenderer {
                 }
                 // The original syntax spans are clipped by a timeline-derived character boundary.
                 // No complete future string is painted under the reveal.
-                drawRow(canvas, row, textLeft, top + baseline, edge, activeLyric, active, neighbor, mix, previous, revealed)
+                // The key going down right now: its letter fades in just below the baseline.
+                val strike = codeCaret?.takeIf { typingOn && it.active && r == it.row && it.next > revealed && it.frac < 1f }
+                drawRow(canvas, row, textLeft, top + baseline, edge, activeLyric, active, neighbor, mix, previous, revealed,
+                    strike?.next ?: 0, strike?.let { easeOut(it.frac) } ?: 1f, !low)
             }
-            // A single eased caret follows measured glyph positions; wrapping resets x rather than
-            // sweeping diagonally across the whole editor. No independent cursor animation loop.
+            // The caret sits exactly where the typed text ends. While a key is going down it rides
+            // along with the letter fading in, so it never trails behind the text. Position is
+            // computed from the same row geometry as the text itself, with no spring of its own.
             var targetRow = codeCaret?.row ?: cursor.row
             var targetCol = codeCaret?.col ?: cursor.col
             if (targetRow !in viewport) { targetRow=cursor.row;targetCol=cursor.col }
@@ -215,19 +249,30 @@ internal class TerminalRenderer {
             if (caretSlot >= 0 || cursor.idle) {
                 val row = doc.rows.getOrNull(targetRow)
                 if(row!=null) targetCol=min(targetCol,revealed(row,targetRow))
-                val x = textLeft + if (row == null) 0f else xAt(row, targetCol)
-                val y = focusY + (viewportPosition(targetRow.toFloat()) - focus) * rowHeight + rowOffset + baseline
-                if (!caretReady || !motionEnabled) {
-                    caretX.snap(x); caretY.snap(y); caretReady = true
-                } else {
-                    if (caretRow != targetRow) caretX.snap(x) else caretX.step(dt, x, 400f, 40f)
-                    caretY.step(dt, y, 225f, 30f)
+                var x = textLeft + if (row == null) 0f else xAt(row, targetCol)
+                val inFlight = if (row != null && codeCaret != null && typingOn && codeCaret.active &&
+                    targetRow == codeCaret.row && codeCaret.next > targetCol) codeCaret else null
+                if (row != null && inFlight != null) {
+                    val x1 = textLeft + xAt(row, inFlight.next)
+                    x += (x1 - x) * easeOut(inFlight.frac)
                 }
+                val y = focusY + (viewportPosition(targetRow.toFloat()) - focus) * rowHeight + rowOffset + baseline
+                val typingNow = codeCaret != null && typingOn && codeCaret.active
+                if (!caretReady || !motionEnabled || typingNow || caretRow != targetRow) caretX.snap(x)
+                else caretX.step(dt, x, 400f, 40f)
+                caretY.snap(y); caretReady = true
                 caretRow = targetRow
-                if (blink) {
-                    fill.color = TerminalPalette.Cursor
-                    canvas.drawRect(caretX.value, caretY.value + lyric.ascent(),
-                        caretX.value + max(density, lyric.textSize * 0.065f), caretY.value + lyric.descent(), fill)
+                val alpha = if (solidCursor || typingNow) 1f else blinkAlpha(timeNs)
+                if (alpha > 0.01f) {
+                    val w = max(density * 1.6f, lyric.textSize * 0.075f)
+                    val top = caretY.value + lyric.ascent()
+                    val bottom = caretY.value + lyric.descent()
+                    if (!low) {
+                        fill.color = color(TerminalPalette.Cursor, 0.16f * alpha)
+                        canvas.drawRect(caretX.value - w, top - w, caretX.value + w * 2f, bottom + w, fill)
+                    }
+                    fill.color = color(TerminalPalette.Cursor, alpha)
+                    canvas.drawRect(caretX.value, top, caretX.value + w, bottom, fill)
                 }
             }
 
@@ -236,18 +281,23 @@ internal class TerminalRenderer {
             failed = true
         } finally {
             canvas.restoreToCount(save)
+            if (!failed && !low && width > 0 && height > 0) canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), vignette)
         }
     }
 
     /** Interpolate the existing row-index scroll spring across folded line-number gaps. */
     private fun viewportPosition(row: Float): Float = viewportMotion.position(viewport, row)
 
-    private fun drawRow(canvas: Canvas, row: TerminalRow, left: Float, y: Float, edge: Float, activeLyric: Boolean, active: Boolean, neighbor: Boolean, mix: Float, previous: Boolean, revealed: Int) {
+    private fun drawRow(canvas: Canvas, row: TerminalRow, left: Float, y: Float, edge: Float, activeLyric: Boolean, active: Boolean, neighbor: Boolean, mix: Float, previous: Boolean, revealed: Int, ghostTo: Int, ghostAlpha: Float, glow: Boolean) {
         var k = 0
         while (k < row.spans.size) {
             val start = row.spans[k]
-            val end = min(row.spans[k + 1], revealed)
-            if (start >= end) break
+            val full = row.spans[k + 1]
+            val end = min(full, revealed)
+            // [revealed, ghostTo) is the letter being struck; it is drawn faded, just below its line.
+            val ghostStart = max(start, revealed)
+            val ghostEnd = if (ghostTo > revealed) min(full, ghostTo) else 0
+            if (start >= end && ghostEnd <= ghostStart) break
             val words = row.spans[k + 3] and TerminalStyle.Lyric != 0
             val paint = if (words) lyric else code
             val alpha = when {
@@ -260,8 +310,16 @@ internal class TerminalRenderer {
                 row.kind == KindHeader -> 0.65f * edge
                 else -> 0.42f * edge
             }
+            val halo = glow && activeLyric && words
+            if (halo) paint.setShadowLayer(lyric.textSize * 0.6f, 0f, 0f, color(TerminalPalette.Cursor, 0.34f * mix))
             paint.color = color(row.spans[k + 2], alpha)
-            canvas.drawText(row.text, start, end, left + xAt(row, start), y, paint)
+            if (start < end) canvas.drawText(row.text, start, end, left + xAt(row, start), y, paint)
+            if (ghostEnd > ghostStart) {
+                paint.color = color(row.spans[k + 2], alpha * ghostAlpha)
+                canvas.drawText(row.text, ghostStart, ghostEnd, left + xAt(row, ghostStart),
+                    y + (1f - ghostAlpha) * 2.5f * density, paint)
+            }
+            if (halo) paint.clearShadowLayer()
             k += TerminalSyntax.Stride
         }
     }
@@ -361,5 +419,15 @@ internal class TerminalRenderer {
         typingTimeline?.visibleChars(index, typingTimeMs, typingRate, typingOn) ?: row.text.length
 
     private fun color(rgb: Int, alpha: Float): Int = ((alpha.coerceIn(0f, 1f) * 255f).toInt() shl 24) or (rgb and 0xFFFFFF)
-    private companion object { const val BlinkNs = 530_000_000L }
+
+    private fun easeOut(t: Float): Float { val u = 1f - t.coerceIn(0f, 1f); return 1f - u * u }
+
+    /** Soft blink: fully on, a short fade out, off, a short fade back in. */
+    private fun blinkAlpha(timeNs: Long): Float {
+        val phase = (timeNs % BlinkPeriodNs).toFloat() / BlinkPeriodNs
+        val c = 0.5f + 0.5f * cos(phase * 6.2831855f)
+        return ((c - 0.12f) / 0.45f).coerceIn(0f, 1f)
+    }
+
+    private companion object { const val BlinkPeriodNs = 1_060_000_000L }
 }
