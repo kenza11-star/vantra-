@@ -32,10 +32,21 @@ Verifikasi lewat CI atau:
 - Kursor menempel persis di ujung teks (tanpa spring), meluncur bersama huruf yang fade-in.
 - Huruf yang sedang diketik fade-in + turun ~2.5dp ke baseline.
 - Blink kursor halus (fade), glow tipis di sekitar kursor (mode non-LOW).
-- Latar gradien biru-hitam + vignette (non-LOW), panel editor lebih pekat (0.95) agar panel
-  belakang tidak tembus ke teks.
 - Band baris aktif bergradien (aksen cyan), glow lembut pada lirik aktif (non-LOW).
 - Warna aksen/kursor: `0xFF8BE9FD` (juga dipakai garis progres).
 
 ### Test (`TerminalEnhancedTest.kt`)
 Ditambah: kecepatan manusiawi, huruf di tengah ketukan, jam pemutaran stabil.
+
+## Update: latar AMOLED + kotak terminal baru (`TerminalRenderer.kt`)
+Dari video 529672.mp4: kotak editor tampak biru-navy dengan tepi tajam, dan latar bergradien.
+- **Latar hitam murni** (`#000000`) di seluruh layar: tanpa gradien, tanpa vignette, tanpa tint.
+  Di layar AMOLED piksel itu mati.
+- **Kartu terminal**: hitam pekat (opacity 1, jadi panel belakang tidak tembus ke teks), sudut
+  membulat 14dp dan anti-alias (sebelumnya persegi tajam dan tidak anti-alias).
+- Garis tepi tipis (hairline) bergradien: lebih terang di atas, memudar ke bawah.
+- Baris memudar halus ke hitam di tepi atas dan bawah kartu, bukan terpotong keras.
+- Title bar kecil: tiga titik abu-abu + `lyrics.kt` (redup). Hapus blok "Hairline edge, then a
+  quiet window title" di `draw()` kalau tidak mau.
+- Garis gutter dan indent guide dinetralkan (tidak lagi kebiruan).
+- Kamera tidak diubah (sudah teredam: yaw maks ±10°).

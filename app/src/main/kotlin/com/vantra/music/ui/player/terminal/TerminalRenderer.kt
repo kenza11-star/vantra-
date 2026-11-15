@@ -4,7 +4,6 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Typeface
 import kotlin.math.abs
@@ -27,11 +26,15 @@ internal class TerminalRenderer {
     }
     private val fill = Paint()
     private val guide = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val backdrop = Paint()
-    private val vignette = Paint()
     private val band = Paint()
-    private var shadedW = 0
-    private var shadedH = 0
+    // The editor card: smooth (anti-aliased) rounded fill, a hairline edge and soft fades into black.
+    private val card = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val cardEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val fadeTop = Paint()
+    private val fadeBottom = Paint()
+    private var fadeHeight = 0f
+    private var shadedH = 0f
+    private var shadedRow = 0f
     private var bandLeft = -1f
     private var bandRight = -1f
     private val matrix = Matrix()
@@ -105,15 +108,19 @@ internal class TerminalRenderer {
         return columnCount
     }
 
-    /** Gradient shaders are rebuilt only when the size or the page geometry changes, never per frame. */
+    /** Shaders are rebuilt only when the size or the page geometry changes, never per frame. */
     private fun shade() {
-        if (width > 0 && height > 0 && (shadedW != width || shadedH != height)) {
-            shadedW = width; shadedH = height
-            backdrop.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
-                0xFF0C121B.toInt(), 0xFF04060A.toInt(), Shader.TileMode.CLAMP)
-            vignette.shader = RadialGradient(width / 2f, height / 2f, max(width, height) * 0.72f,
-                intArrayOf(0x00000000, 0x00000000, 0x8C000000.toInt()),
-                floatArrayOf(0f, 0.58f, 1f), Shader.TileMode.CLAMP)
+        if (height > 0 && (shadedH != height.toFloat() || shadedRow != rowHeight)) {
+            shadedH = height.toFloat(); shadedRow = rowHeight
+            fadeHeight = max(rowHeight * 1.8f, height * 0.12f)
+            fadeTop.shader = LinearGradient(0f, 0f, 0f, fadeHeight,
+                0xFF000000.toInt(), 0x00000000.toInt(), Shader.TileMode.CLAMP)
+            fadeBottom.shader = LinearGradient(0f, height - fadeHeight, 0f, height.toFloat(),
+                0x00000000.toInt(), 0xFF000000.toInt(), Shader.TileMode.CLAMP)
+            // brighter at the top, like light catching the upper edge of the glass
+            cardEdge.shader = LinearGradient(0f, 0f, 0f, height.toFloat(),
+                0x38FFFFFF.toInt(), 0x0DFFFFFF.toInt(), Shader.TileMode.CLAMP)
+            cardEdge.strokeWidth = max(1f, density * 0.75f)
         }
         if (bandLeft != gutter || bandRight != pageWidth) {
             bandLeft = gutter; bandRight = pageWidth
@@ -144,8 +151,8 @@ internal class TerminalRenderer {
         typingTimeline = typing; typingTimeMs = typingPositionMs; typingRate = typingSpeed; typingOn = typingEnabled
         val save = canvas.save()
         try {
-            if (width > 0 && height > 0) canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backdrop)
-            else canvas.drawColor(android.graphics.Color.BLACK)
+            // True black: on an AMOLED panel those pixels are off, and nothing tints the background.
+            canvas.drawColor(android.graphics.Color.BLACK)
             if (width <= 0 || height <= 0 || charW <= 0f) return
             val resetMotion = generation != motionGeneration
             motionGeneration = generation
@@ -197,10 +204,12 @@ internal class TerminalRenderer {
             val pageTop = min(0f, activeTop)
             val pageBottom = max(height.toFloat(), activeBottom)
             canvas.clipRect(0f, pageTop, pageWidth, pageBottom)
-            // A dark editor backing prevents rear code from competing with real words.
-            fill.color = color(0x070A10, 0.95f)
-            canvas.drawRect(0f, pageTop, pageWidth, pageBottom, fill)
-            guide.color = 0xFF20252B.toInt()
+            // An opaque black card keeps rear code from competing with real words. It is rounded and
+            // anti-aliased; the hairline edge and the fades are drawn over the rows further down.
+            val radius = 14f * density
+            card.color = android.graphics.Color.BLACK
+            canvas.drawRoundRect(0f, pageTop, pageWidth, pageBottom, radius, radius, card)
+            guide.color = color(0xFFFFFF, 0.07f)
             canvas.drawLine(gutter, 0f, gutter, height.toFloat(), guide)
             for (slot in viewport.indices) {
                 val r = viewport[slot]
@@ -226,7 +235,7 @@ internal class TerminalRenderer {
                 if (!low) {
                     var indent = 0
                     while (indent < revealed && row.text[indent] == ' ') indent++
-                    guide.color = color(0x637180, if (active) 0.28f else 0.12f)
+                    guide.color = color(0x8A8F98, if (active) 0.26f else 0.11f)
                     for (column in 2..indent step 2) {
                         val x = textLeft + (column - 2) * charW
                         canvas.drawLine(x, top, x, top + rowHeight, guide)
@@ -239,6 +248,20 @@ internal class TerminalRenderer {
                 drawRow(canvas, row, textLeft, top + baseline, edge, activeLyric, active, neighbor, mix, previous, revealed,
                     strike?.next ?: 0, strike?.let { easeOut(it.frac) } ?: 1f, !low)
             }
+            // Rows dissolve into the black at the top and bottom of the card instead of being cut off.
+            canvas.drawRect(0f, pageTop, pageWidth, fadeHeight, fadeTop)
+            canvas.drawRect(0f, height - fadeHeight, pageWidth, pageBottom, fadeBottom)
+            // Hairline edge, then a quiet window title: three dots and a file name.
+            val inset = cardEdge.strokeWidth / 2f
+            canvas.drawRoundRect(inset, pageTop + inset, pageWidth - inset, pageBottom - inset, radius, radius, cardEdge)
+            val dotR = 2.6f * density
+            val dotX = 14f * density
+            val barY = pageTop + rowHeight * 0.5f
+            card.color = color(0xFFFFFF, 0.20f)
+            for (i in 0..2) canvas.drawCircle(dotX + i * dotR * 3.6f, barY, dotR, card)
+            code.color = color(TerminalPalette.Comment, 0.55f)
+            canvas.drawText("lyrics.kt", dotX + dotR * 3.6f * 3f, barY + code.textSize * 0.35f, code)
+
             // The caret sits exactly where the typed text ends. While a key is going down it rides
             // along with the letter fading in, so it never trails behind the text. Position is
             // computed from the same row geometry as the text itself, with no spring of its own.
@@ -281,7 +304,6 @@ internal class TerminalRenderer {
             failed = true
         } finally {
             canvas.restoreToCount(save)
-            if (!failed && !low && width > 0 && height > 0) canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), vignette)
         }
     }
 
