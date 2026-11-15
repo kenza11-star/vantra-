@@ -1,0 +1,34 @@
+Baseline: Vantra-Terminal-V3-Final.zip
+Original file members: 5091
+Modified: 7
+Unchanged originals: 5084
+Added: 12
+Deleted: 0
+
+MODIFIED
+app/src/main/kotlin/com/vantra/music/constants/PreferenceKeys.kt
+app/src/main/kotlin/com/vantra/music/ui/player/studio/TerminalOptions.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/BeatTracker.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalCamera.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalPlayerStyle.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalRenderer.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalSynchronization.kt
+
+ADDED
+CHANGES-TERMINAL-V3-ENHANCED.md
+app/src/main/kotlin/com/vantra/music/ui/player/studio/TerminalEnhancementOptions.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalEmphasis.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalMarkerPreferences.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalTypingTimeline.kt
+app/src/test/kotlin/com/vantra/music/ui/player/terminal/TerminalEnhancedTest.kt
+docs/terminal-v3/ENHANCED-ARCHIVE-AUDIT.txt
+docs/terminal-v3/ENHANCED-CHANGED-FILES.txt
+docs/terminal-v3/ENHANCED-PLAN.md
+docs/terminal-v3/ENHANCED-REPORT.md
+docs/terminal-v3/ENHANCED-TYPING-PROBE.txt
+docs/terminal-v3/ENHANCED-VERIFICATION.txt
+
+DELETED
+None
+
+Checks: original preferences/options unchanged outside new additions; all unchanged original bytes equal; changed/new member bytes equal local source; ZIP CRC valid; no duplicate names.

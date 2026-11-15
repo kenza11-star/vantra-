@@ -7,12 +7,13 @@ import android.provider.Settings
 import android.view.OrientationEventListener
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -36,10 +37,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.State
+import androidx.compose.runtime.MutableLongState
 import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
@@ -67,7 +74,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import com.vantra.music.LocalPlayerConnection
-import com.vantra.music.constants.PlayerStyle
 import com.vantra.music.constants.TerminalBeatKey
 import com.vantra.music.constants.TerminalIntensity
 import com.vantra.music.constants.TerminalIntensityKey
@@ -75,22 +81,24 @@ import com.vantra.music.constants.TerminalOrientation
 import com.vantra.music.constants.TerminalOrientationKey
 import com.vantra.music.constants.TerminalQuality
 import com.vantra.music.constants.TerminalQualityKey
+import com.vantra.music.constants.TerminalTypingSpeed
+import com.vantra.music.constants.TerminalTypingSpeedKey
+import com.vantra.music.constants.TerminalBassResponse
+import com.vantra.music.constants.TerminalBassResponseKey
+import com.vantra.music.constants.TerminalEmotionalZoom
+import com.vantra.music.constants.TerminalEmotionalZoomKey
+import com.vantra.music.constants.TerminalEmphasisMarkersKey
 import com.vantra.music.constants.TerminalTypingKey
 import com.vantra.music.lyrics.LyricsEntry
 import com.vantra.music.ui.player.findActivity
 import com.vantra.music.ui.player.styles.LivePosition
 import com.vantra.music.ui.player.styles.StyleActions
-import com.vantra.music.ui.player.styles.StyleControls
-import com.vantra.music.ui.player.styles.StyleFrame
 import com.vantra.music.ui.player.styles.StyleTrack
 import com.vantra.music.ui.player.styles.rememberDurationMs
-import com.vantra.music.ui.player.styles.rememberLivePosition
 import com.vantra.music.ui.player.styles.rememberPlayedSeconds
 import com.vantra.music.ui.player.styles.rememberStyleLyrics
 import com.vantra.music.ui.player.styles.rememberStyleShowing
-import com.vantra.music.ui.player.styles.rememberStyleTones
 import com.vantra.music.ui.player.styles.rememberStyleTrack
-import com.vantra.music.ui.player.styles.styleInsets
 import com.vantra.music.ui.player.styles.withLyricsOffset
 import com.vantra.music.ui.utils.AppMotion
 import com.vantra.music.utils.rememberEnumPreference
@@ -110,9 +118,17 @@ private val Red = Color(TerminalPalette.Cursor)
  */
 @Composable
 fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, preview: Boolean = false) {
-    val tones = rememberStyleTones()
     val track = rememberStyleTrack()
-    val position = rememberLivePosition(animated = !preview).withLyricsOffset()
+    val connection = LocalPlayerConnection.current
+    val sceneFrame = remember { mutableLongStateOf(0L) }
+    // Terminal owns one frame clock. Chrome subscribes to it instead of starting a second loop.
+    val position = remember(connection) {
+        LivePosition(read = {
+            val cast = connection?.service?.castConnectionHandler
+            if (cast?.isCasting?.value == true) cast.castPosition.value
+            else connection?.player?.currentPosition ?: 0L
+        }, tick = { sceneFrame.longValue })
+    }.withLyricsOffset()
     val duration = rememberDurationMs()
     val lyrics = rememberStyleLyrics(readings = !preview)
     var orientation by rememberEnumPreference(TerminalOrientationKey, TerminalOrientation.AUTO)
@@ -123,36 +139,39 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
         TerminalOrientation.LANDSCAPE -> true
     }
     val source = remember { mutableStateOf(BeatSource.NONE) }
-    val connection = LocalPlayerConnection.current
     val playing = connection?.isPlaying?.collectAsState()?.value == true
+    val currentMediaId = connection?.mediaMetadata?.collectAsState()?.value?.id
 
-    StyleFrame(
-        style = PlayerStyle.TERMINAL,
-        preview = preview,
-        modifier = modifier,
-        tones = tones,
-        background = { Box(Modifier.fillMaxSize().background(Color.Black)) },
-        rotatedOverride = rotated,
-    ) { landscape, menuOpen, setMenuOpen, isRotated, _ ->
-        val insets = styleInsets(landscape)
+    TerminalFrame(rotated=rotated, preview=preview, modifier=modifier) { landscape, menuOpen, setMenuOpen ->
+        val insets = terminalInsets(landscape)
         // landscape is a fullscreen code environment: the system bars step aside while it shows
         ImmersiveWhileLandscape(active = landscape && !preview)
 
         // in landscape the controls step aside while the music plays; a tap brings them back
         var reveal by remember { mutableIntStateOf(0) }
         var controlsOn by remember { mutableStateOf(true) }
-        LaunchedEffect(landscape, playing, menuOpen, reveal) {
+        var controlsFocused by remember { mutableStateOf(false) }
+        val touchExploration = rememberTerminalTouchExploration()
+        val accessibility = LocalAccessibilityManager.current
+        val autoHide = TerminalPresentation.autoHide(landscape, playing, menuOpen,
+            touchExploration, controlsFocused, preview)
+        LaunchedEffect(autoHide, reveal, accessibility) {
             controlsOn = true
-            if (landscape && playing && !menuOpen && !preview) {
-                delay(ControlsHideMs)
+            if (autoHide) {
+                val timeout = accessibility?.calculateRecommendedTimeoutMillis(ControlsHideMs,
+                    containsIcons=true, containsText=true, containsControls=true) ?: ControlsHideMs
+                delay(timeout)
                 controlsOn = false
             }
         }
         val controlsAlpha by animateFloatAsState(if (controlsOn) 1f else 0f, tween(220), label = "terminalControls")
 
-        Box(
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
+                .then(if (preview) Modifier else Modifier.semantics {
+                    onClick(label = "Show playback controls") { reveal++; true }
+                })
                 .pointerInput(Unit) {
                     // a tap that takes nothing from the gestures around it (double tap still plays and pauses)
                     awaitEachGesture {
@@ -162,8 +181,12 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                     }
                 },
         ) {
+            val compactLandscape = landscape && maxHeight < 240.dp
             TerminalScene(
-                lines = lyrics.lines,
+                lines = if (lyrics.mediaId == currentMediaId) lyrics.lines else emptyList(),
+                lyricsMediaId = lyrics.mediaId,
+                trackMediaId = currentMediaId,
+                frame = sceneFrame,
                 track = track,
                 position = position,
                 landscape = landscape,
@@ -171,9 +194,9 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                 source = source,
                 modifier = if (preview) Modifier.fillMaxSize().padding(6.dp) else Modifier.fillMaxSize().padding(
                     start = insets.start + 4.dp,
-                    top = insets.top + 72.dp,
-                    end = insets.end + (if (landscape) 60.dp else 4.dp),
-                    bottom = insets.bottom + (if (landscape) 28.dp else 104.dp),
+                    top = insets.top + (if (landscape) 60.dp else 72.dp),
+                    end = insets.end + (if (landscape && !compactLandscape) 72.dp else 4.dp),
+                    bottom = insets.bottom + (if (compactLandscape) 68.dp else if (landscape) 28.dp else 104.dp),
                 ),
             )
             if (!preview) {
@@ -181,7 +204,7 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                     track = track,
                     position = position,
                     duration = duration,
-                    hasLyrics = lyrics.lines.isNotEmpty(),
+                    hasLyrics = lyrics.mediaId == currentMediaId && lyrics.lines.isNotEmpty(),
                     source = source.value,
                     landscape = landscape,
                     insetStart = insets.start,
@@ -191,12 +214,14 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                     uiAlpha = controlsAlpha,
                 )
                 if (controlsAlpha > 0.01f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = controlsAlpha }) {
-                        StyleControls(
-                            tones, landscape, insets, menuOpen, setMenuOpen, actions, isRotated,
-                            { turned -> orientation = if (turned) TerminalOrientation.LANDSCAPE else TerminalOrientation.PORTRAIT },
-                            menuTop = insets.top + 20.dp,
-                        )
+                    Box(Modifier.fillMaxSize()
+                        .padding(top=if (landscape) insets.top else 0.dp,
+                            bottom=if (landscape) insets.bottom else 0.dp)
+                        .onFocusChanged { controlsFocused=it.hasFocus }.focusGroup()
+                        .graphicsLayer { alpha = controlsAlpha }) {
+                        TerminalControls(landscape, insets, menuOpen, setMenuOpen, actions) {
+                            orientation = if (rotated) TerminalOrientation.PORTRAIT else TerminalOrientation.LANDSCAPE
+                        }
                     }
                 }
             }
@@ -211,14 +236,26 @@ private const val ControlsHideMs = 3_500L
 /** Everything the scene moves, kept off the snapshot system: the frame loop writes it, the draw reads it. */
 private class SceneState {
     val camera = TerminalCamera()
-    val tracker = BeatTracker()
+    val sync = TerminalSynchronization()
+    val transition = TerminalBlockTransition()
+    var discontinuity = 0L
+    var motionEnabled = true
     val cursor = TerminalCursor()
     val scroll = Spring()
+    val codeCaret = TerminalCodeCaret()
+    var typingTimeline: TerminalTypingTimeline? = null
+    var typingTimeMs = 0L
+    var typingSpeed = 1f
+    var typingEnabled = false
+    val emphasis = TerminalEmphasisFrame()
+    val intent = TerminalCameraIntent()
     var glow = 0f
     var low = false
     var timeNs = 0L
     var solidCursor = false
     var followX = 0f
+    var accessibleLine: androidx.compose.runtime.MutableIntState? = null
+    var accessibleText: MutableState<String>? = null
     var document: TerminalDocument? = null
     var primed = false
 }
@@ -226,6 +263,9 @@ private class SceneState {
 @Composable
 private fun TerminalScene(
     lines: List<LyricsEntry>,
+    lyricsMediaId: String?,
+    trackMediaId: String?,
+    frame: MutableLongState,
     track: StyleTrack,
     position: LivePosition,
     landscape: Boolean,
@@ -237,7 +277,6 @@ private fun TerminalScene(
     val connection = LocalPlayerConnection.current
     val renderer = remember { TerminalRenderer() }
     val state = remember { SceneState() }
-    val frame = remember { mutableLongStateOf(0L) }
     val failed = remember { mutableStateOf(false) }
     var size by remember { mutableStateOf(IntSize.Zero) }
 
@@ -245,26 +284,62 @@ private fun TerminalScene(
     val quality by rememberEnumPreference(TerminalQualityKey, TerminalQuality.AUTO)
     val beatPref by com.vantra.music.utils.rememberPreference(TerminalBeatKey, defaultValue = true)
     val typingPref by com.vantra.music.utils.rememberPreference(TerminalTypingKey, defaultValue = true)
+    val typingSpeed by rememberEnumPreference(TerminalTypingSpeedKey, TerminalTypingSpeed.NORMAL)
+    val bassResponse by rememberEnumPreference(TerminalBassResponseKey, TerminalBassResponse.NORMAL)
+    val emotionalZoom by rememberEnumPreference(TerminalEmotionalZoomKey, TerminalEmotionalZoom.NORMAL)
+    val rawMarkers by com.vantra.music.utils.rememberPreference(TerminalEmphasisMarkersKey, defaultValue="{}")
+    val markers = remember(rawMarkers,trackMediaId) {
+        TerminalEmphasis.parse(TerminalMarkerPreferences.text(rawMarkers,trackMediaId)).markers
+    }
+    val markersNow by rememberUpdatedState(markers)
+    val trackIdNow by rememberUpdatedState(trackMediaId)
     val lowDevice = remember(context) { isLowEndDevice(context) }
 
     val density = LocalDensity.current
     val cols = remember(size, landscape, density.density, density.fontScale) {
         renderer.layout(size.width, size.height, landscape, density.density, density.fontScale)
     }
-    val doc = remember(lines, track.title, track.artist, cols, density.fontScale) {
+    val doc = remember(lines, track.title, track.artist, cols, size.width, density.density, density.fontScale) {
         buildDocument(lines, track, cols, renderer::measureColumns)
     }
     val docNow by rememberUpdatedState(doc)
+    val typingTimeline = remember(doc) { TerminalTypingTimeline(doc) }
+    val typingNow by rememberUpdatedState(typingTimeline)
     val landscapeNow by rememberUpdatedState(landscape)
-    val playing = connection?.isPlaying?.collectAsState()?.value == true
+    val activePlayer = connection?.service?.playerFlow?.collectAsState()?.value ?: connection?.player
+    val lyricsIdNow by rememberUpdatedState(lyricsMediaId)
+    val missingDoc = remember(cols) { TerminalDocument.unavailable(cols) }
+    val missingDocNow by rememberUpdatedState(missingDoc)
+    val missingTyping = remember(missingDoc) { TerminalTypingTimeline(missingDoc) }
+    val missingTypingNow by rememberUpdatedState(missingTyping)
+    val settingsNow by rememberUpdatedState(TerminalFrameSettings(intensity.scale, quality, beatPref, typingPref, typingSpeed.scale, bassResponse.scale, emotionalZoom.scale))
     val showing = rememberStyleShowing()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    // Actual transport events include tiny seeks and repeat of the same media ID.
+    DisposableEffect(activePlayer) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onPositionDiscontinuity(oldPosition: androidx.media3.common.Player.PositionInfo,
+                newPosition: androidx.media3.common.Player.PositionInfo, reason: Int) { state.discontinuity++ }
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) { state.discontinuity++ }
+        }
+        if (!preview) activePlayer?.addListener(listener)
+        onDispose { if (!preview) activePlayer?.removeListener(listener) }
+    }
 
     // A selector card uses the same editor and camera, held on a still frame.
     if (preview) {
         LaunchedEffect(doc, size, landscape) {
             val s = state
             doc.locate(position.positionMs(), typing = false, out = s.cursor)
+            s.document = doc
+            s.typingTimeline = typingTimeline
+            s.typingTimeMs = position.positionMs()
+            s.typingEnabled = false
+            typingTimeline.locate(s.typingTimeMs,1f,false,s.codeCaret)
+            s.accessibleLine?.intValue = s.cursor.line
+            s.accessibleText?.value = doc.lines.getOrNull(s.cursor.line)?.text ?: "No synchronized lyrics"
+            s.transition.update(0f, s.cursor.line, snap = true)
             s.scroll.snap(doc.focusRow(s.cursor, renderer.visibleRows()))
             s.camera.reset()
             s.camera.baseYaw = if (landscape) 0.10f else 0.06f
@@ -277,143 +352,164 @@ private fun TerminalScene(
             frame.longValue++
         }
     } else {
-        LaunchedEffect(connection, playing, beatPref, typingPref, intensity, quality, lowDevice) {
+        LaunchedEffect(connection, activePlayer, lifecycle, showing) {
             val conn = connection ?: return@LaunchedEffect
+            val player = activePlayer ?: return@LaunchedEffect
             val s = state
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                snapshotFlow { showing() }.collectLatest { shown ->
-                    if (!shown) {
-                        source.value = BeatSource.NONE
-                        return@collectLatest
-                    }
-                    s.tracker.reset()
-                    var last = 0L
-                    var lastPos = Long.MIN_VALUE
-                    var acc = 0f
-                    var calm = 0f
-                    var unheard = 0f
-                    var slowFrames = 0
-                    var degraded = false
-                    while (true) {
-                        if (renderer.failed) {
-                            failed.value = true
+            try {
+                lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    try {
+                        snapshotFlow { showing() }.collectLatest { shown ->
+                            s.sync.suspendAnalysis()
                             source.value = BeatSource.NONE
-                            return@collectLatest
-                        }
-                        // paused and settled: only the cursor's blink is left, a few redraws a second
-                        if (!playing && calm > 1.5f) {
-                            delay(BlinkPollMs)
-                            s.timeNs = System.nanoTime()
-                            val p = conn.player.currentPosition
-                            // a seek, or lyrics arriving, while paused: wake up and move to it
-                            docNow.locate(position.positionMs(), typingPref && AppMotion.durationScale.scaleFactor != 0f, s.cursor)
-                            if (p != lastPos || abs(docNow.focusRow(s.cursor, renderer.visibleRows()) - s.scroll.value) > 0.02f) calm = 0f
-                            frame.longValue++
-                            continue
-                        }
-                        val now = androidx.compose.runtime.withFrameNanos { it }
-                        val dt = if (last == 0L) 0.016f else ((now - last) / 1e9f).coerceIn(0.001f, 0.1f)
-                        last = now
+                            if (!shown) return@collectLatest
+                            var last = 0L
+                            var acc = 0f
+                            var calm = 0f
+                            var slowFrames = 0
+                            var degraded = false
+                            while (true) {
+                                if (renderer.failed) {
+                                    failed.value = true
+                                    source.value = BeatSource.NONE
+                                    return@collectLatest
+                                }
+                                val castBeforeWait = conn.service.castConnectionHandler
+                                val playingBeforeWait = if (castBeforeWait?.isCasting?.value == true)
+                                    castBeforeWait.castIsPlaying.value else player.isPlaying
+                                // No audio/typing polling loop while paused: the same loop slows to caret blink rate.
+                                val now = if (!playingBeforeWait && calm > 1.5f) {
+                                    delay(BlinkPollMs)
+                                    System.nanoTime()
+                                } else androidx.compose.runtime.withFrameNanos { it }
+                                val elapsed = if (last == 0L) 0.016f else ((now - last) / 1e9f).coerceAtLeast(0.001f)
+                                last = now
+                                // Re-read transport after suspension: pause/resume or Cast can change while waiting.
+                                val cast = conn.service.castConnectionHandler
+                                val casting = cast?.isCasting?.value == true
+                                val playing = if (casting) cast?.castIsPlaying?.value == true else player.isPlaying
+                                val prefs = settingsNow
+                                if (prefs.quality == TerminalQuality.AUTO && playing) {
+                                    slowFrames = if (elapsed > 0.026f) slowFrames + 1 else maxOf(0, slowFrames - 1)
+                                    if (slowFrames > 90) degraded = true
+                                }
+                                val low = prefs.quality == TerminalQuality.LOW ||
+                                    (prefs.quality == TerminalQuality.AUTO && (lowDevice || degraded))
+                                s.low = low
+                                acc += elapsed
+                                if (low && playing && acc < 0.032f) continue
+                                val stepDt = acc.coerceAtMost(0.1f)
+                                val transportDt = acc
+                                acc = 0f
+                                val reduced = AppMotion.durationScale.scaleFactor == 0f
+                                val motionOff = reduced || prefs.intensity == 0f
+                                val k = if (motionOff) 0f else prefs.intensity
+                                s.motionEnabled = !motionOff
+                                val posMs = if (casting) cast?.castPosition?.value ?: 0L else player.currentPosition
+                                val mediaId = if (casting) conn.mediaMetadata.value?.id else player.currentMediaItem?.mediaId
+                                val boundary = s.sync.beginFrame(transportDt, posMs, mediaId,
+                                    if (casting) cast else player, s.discontinuity, playing,
+                                    if (casting) 1f else player.playbackParameters.speed)
+                                if (s.sync.timelineJump) s.camera.clearAudioReaction()
 
-                        if (quality == TerminalQuality.AUTO) {
-                            // frames running long for two seconds: ease off for good
-                            slowFrames = if (dt > 0.026f) slowFrames + 1 else maxOf(0, slowFrames - 1)
-                            if (slowFrames > 90) degraded = true
-                        }
-                        val low = quality == TerminalQuality.LOW || (quality == TerminalQuality.AUTO && (lowDevice || degraded))
-                        s.low = low
-                        // the light mode draws at half rate
-                        acc += dt
-                        if (low && acc < 0.032f) continue
-                        val stepDt = acc
-                        acc = 0f
-
-                        val reduced = AppMotion.durationScale.scaleFactor == 0f
-                        val k = if (reduced) 0f else intensity.scale
-                        val beatOn = beatPref && !reduced
-                        val posMs = conn.player.currentPosition
-
-                        // a seek or a restart: what was heard before no longer lines up
-                        var seeking = false
-                        if (lastPos != Long.MIN_VALUE) {
-                            val speed = conn.player.playbackParameters.speed
-                            val expected = if (playing) stepDt * 1000f * speed else 0f
-                            if (abs(posMs - lastPos - expected) > 400f) {
-                                s.tracker.reset()
-                                seeking = true
+                                // Only the current local player's PCM can establish an audio onset.
+                                // Cast is remote: its reported clock drives fallback lyrics, never local FFT data.
+                                val enabled = prefs.beat && !motionOff && prefs.bassGain > 0f
+                                val spectrum = if (enabled && playing && !casting) conn.service.spectrumOf(player) else null
+                                val heard = spectrum?.read(posMs, s.sync.tracker.bands) == true
+                                val activeDoc = if (lyricsIdNow != null && lyricsIdNow == mediaId) docNow else missingDocNow
+                                val docChanged = s.document !== activeDoc
+                                s.sync.react(stepDt, playing, enabled, !activeDoc.isEmpty, heard)
+                                if (source.value != s.sync.source) source.value = s.sync.source
+                                val lyricMs = posMs + conn.lyricsOffsetMs.value.toLong()
+                                activeDoc.locate(lyricMs, prefs.typing && !reduced, s.cursor)
+                                s.typingTimeline = if(activeDoc === docNow) typingNow else missingTypingNow
+                                s.typingTimeMs = lyricMs
+                                s.typingSpeed = prefs.typingSpeed
+                                s.typingEnabled = prefs.typing && !reduced
+                                s.typingTimeline?.locate(lyricMs,prefs.typingSpeed,s.typingEnabled,s.codeCaret)
+                                if(s.typingEnabled) s.typingTimeline?.focusCursor(s.cursor,s.codeCaret)
+                                TerminalEmphasis.sample(if(trackIdNow==mediaId) markersNow else emptyList(),
+                                    lyricMs,if(motionOff) 0f else prefs.zoomGain,s.emphasis)
+                                s.transition.update(stepDt, if (s.cursor.idle) -1 else s.cursor.line,
+                                    snap = boundary || docChanged || motionOff)
+                                s.camera.baseYaw = if (landscapeNow) 0.10f else 0.06f
+                                s.camera.basePitch = -0.09f
+                                val line = activeDoc.lines.getOrNull(s.cursor.line)
+                                s.followX = if (line == null) 0f else kotlin.math.sin(line.index * 0.65f)
+                                val nextTime = activeDoc.lines.getOrNull(s.cursor.line + 1)?.timeMs
+                                val interval = if (line == null) 1L else
+                                    ((nextTime ?: (line.timeMs + 6_000L)) - line.timeMs).coerceAtLeast(1L)
+                                val progress = if (line == null) 0f else
+                                    ((lyricMs - line.timeMs).toFloat() / interval).coerceIn(0f, 1f)
+                                val target = activeDoc.focusRow(s.cursor, renderer.visibleRows())
+                                if (!s.primed || docChanged || boundary || motionOff) {
+                                    s.scroll.snap(target)
+                                    s.primed = true
+                                } else s.scroll.step(stepDt, target, 49f, 14f)
+                                s.document = activeDoc
+                                if (docChanged || s.accessibleLine?.intValue != s.cursor.line) {
+                                    s.accessibleLine?.intValue = s.cursor.line
+                                    s.accessibleText?.value = line?.text?.takeIf { it.isNotBlank() }
+                                        ?: "No synchronized lyrics"
+                                }
+                                val audio = s.sync.source == BeatSource.AUDIO
+                                s.intent.focusZoom=s.emphasis.zoom
+                                s.intent.focusWeight=s.emphasis.weight
+                                s.intent.stillness=s.emphasis.stillness
+                                s.intent.climax=s.emphasis.climax
+                                s.intent.bassGain=prefs.bassGain
+                                s.intent.onset=if(audio) s.sync.tracker.kick else 0f
+                                s.intent.reconstruct=s.sync.timelineJump && !casting
+                                s.camera.update(stepDt, posMs / 1000f, k,
+                                    if (audio) s.sync.tracker.bassDrive else 0f,
+                                    if (audio) s.sync.tracker.energy else 0f,
+                                    s.sync.pulse, landscapeNow, s.followX, progress, s.cursor.idle,
+                                    audioReactive = audio, intent=s.intent)
+                                val glowTarget = if (audio) s.sync.tracker.bass else 0.1f
+                                s.glow += (glowTarget - s.glow) * (1f - kotlin.math.exp(-stepDt / 0.18f))
+                                s.solidCursor = playing && s.typingEnabled && s.codeCaret.active
+                                s.timeNs = now
+                                calm = if (playing || boundary || docChanged || abs(target - s.scroll.value) > 0.02f) 0f else calm + stepDt
+                                frame.longValue = now
                             }
                         }
-
-                        // the audio, as heard right now; only when playing, and only if the player can be tapped
-                        val spectrum = if (beatOn && playing) conn.service.spectrumOf(conn.player) else null
-                        val heard = spectrum != null && spectrum.read(posMs, s.tracker.bands)
-                        s.tracker.update(stepDt, heard)
-                        unheard = if (beatOn && playing && !heard) unheard + stepDt else 0f
-                        val src = when {
-                            heard -> BeatSource.AUDIO
-                            beatOn && playing && unheard > 0.8f -> BeatSource.LYRIC_TIMING
-                            else -> BeatSource.NONE
-                        }
-                        if (source.value != src) source.value = src
-
-                        val lyricMs = position.positionMs()
-                        docNow.locate(lyricMs, typingPref && !reduced, s.cursor)
-                        // Preserve Stage 1 resting composition; the camera follows lyric blocks smoothly.
-                        s.camera.baseYaw = if (landscapeNow) 0.10f else 0.06f
-                        s.camera.basePitch = -0.09f
-                        // Track the block, never the typing caret: typing must not steer the shot.
-                        val line = docNow.lines.getOrNull(s.cursor.line)
-                        s.followX = if (line == null) 0f else kotlin.math.sin(line.index * 0.65f)
-                        val nextTime = docNow.lines.getOrNull(s.cursor.line + 1)?.timeMs
-                        val interval = if (line == null) 1L else
-                            ((nextTime ?: (line.timeMs + 6_000L)) - line.timeMs).coerceAtLeast(1L)
-                        val progress = if (line == null) 0f else
-                            ((lyricMs - line.timeMs).toFloat() / interval).coerceIn(0f, 1f)
-
-                        val target = docNow.focusRow(s.cursor, renderer.visibleRows())
-                        if (!s.primed || s.document !== docNow || seeking) {
-                            s.scroll.snap(target)
-                            s.primed = true
-                            s.document = docNow
-                        } else {
-                            s.scroll.step(stepDt, target, 49f, 14f)
-                        }
-                        s.camera.update(
-                            dt = stepDt,
-                            timeS = posMs / 1000f,
-                            intensity = k,
-                            bass = if (heard) s.tracker.bass else 0f,
-                            energy = if (heard) s.tracker.energy else 0f,
-                            kick = if (heard) s.tracker.kick else 0f,
-                            wide = landscapeNow,
-                            follow = s.followX,
-                            progress = progress,
-                            idle = s.cursor.idle,
-                        )
-                        s.glow = if (heard) s.tracker.bass else if (src == BeatSource.LYRIC_TIMING) 0.2f else 0.1f
-                        s.solidCursor = playing && s.cursor.typed < (docNow.lines.getOrNull(s.cursor.line)?.text?.length ?: 0)
-                        s.timeNs = now
-
-                        // still, or only just come to rest: count toward the idle blink
-                        calm = if (playing || posMs != lastPos || abs(target - s.scroll.value) > 0.02f) 0f else calm + stepDt
-                        lastPos = posMs
-                        frame.longValue = now
+                    } finally {
+                        s.sync.suspendAnalysis()
+                        source.value = BeatSource.NONE
                     }
                 }
+            } finally {
+                s.sync.suspendAnalysis()
+                source.value = BeatSource.NONE
             }
         }
     }
 
+    val accessibleLine = remember { mutableIntStateOf(Int.MIN_VALUE) }
+    val accessibleText = remember { mutableStateOf("No synchronized lyrics") }
+    // The loop updates these only when the real active line/document changes, never per character.
+    state.accessibleLine = accessibleLine
+    state.accessibleText = accessibleText
     Box(
         modifier
+            .semantics { contentDescription = accessibleText.value }
             .onSizeChanged { size = it }
             .drawBehind {
                 // reading the tick here is what repaints the scene each frame without recomposing anything
                 frame.longValue
                 drawIntoCanvas { canvas ->
+                    val initial = state.document == null
                     renderer.draw(
-                        canvas.nativeCanvas, docNow, state.cursor, state.scroll.value, state.camera,
+                        canvas.nativeCanvas, state.document ?: docNow, state.cursor, state.scroll.value, state.camera,
                         state.timeNs, state.low, landscapeNow, state.glow, state.solidCursor,
+                        activeMix = state.transition.mix, previousLine = state.transition.previousLine,
+                        generation = state.sync.generation, motionEnabled = state.motionEnabled,
+                        typing=state.typingTimeline ?: typingNow,
+                        typingPositionMs=if(initial) position.positionMs() else state.typingTimeMs,
+                        typingSpeed=if(initial) typingSpeed.scale else state.typingSpeed,
+                        typingEnabled=if(initial) !preview && typingPref && AppMotion.durationScale.scaleFactor!=0f else state.typingEnabled,
+                        codeCaret=state.codeCaret,
                     )
                 }
             },
@@ -431,6 +527,9 @@ private fun TerminalScene(
         }
     }
 }
+
+private data class TerminalFrameSettings(val intensity: Float, val quality: TerminalQuality,
+    val beat: Boolean, val typing: Boolean, val typingSpeed: Float, val bassGain: Float, val zoomGain: Float)
 
 private const val BlinkPollMs = 265L
 
@@ -472,6 +571,7 @@ private fun TerminalChrome(
         // the editor's tab: artwork, title and artist, over a hairline that is the song's progress
         Column(
             Modifier
+                .semantics { if (chromeAlpha < 0.01f) hideFromAccessibility() }
                 .align(Alignment.TopStart)
                 .padding(start = 18.dp + insetStart, top = insetTop + 14.dp, end = (if (landscape) 76.dp else 70.dp) + insetEnd)
                 .fillMaxWidth(),
@@ -511,6 +611,7 @@ private fun TerminalChrome(
             color = Ink.copy(alpha = 0.4f),
             style = TextStyle(fontFamily = Mono, fontSize = 10.sp),
             modifier = Modifier
+                .semantics { if (chromeAlpha < 0.01f) hideFromAccessibility() }
                 .align(Alignment.BottomStart)
                 .padding(start = 18.dp + insetStart, bottom = insetBottom + 10.dp)
                 .graphicsLayer { alpha = chromeAlpha },
@@ -520,8 +621,9 @@ private fun TerminalChrome(
 
 private fun statusLine(source: BeatSource, hasLyrics: Boolean): String {
     val beat = when (source) {
-        BeatSource.AUDIO -> "beat: audio"
+        BeatSource.AUDIO -> "beat: audio onset"
         BeatSource.LYRIC_TIMING -> "beat: none (lyric timing only)"
+        BeatSource.PLAYBACK_TIMING -> "beat: none (playback timing only)"
         BeatSource.NONE -> "beat: off"
     }
     return "$beat  |  lyrics: ${if (hasLyrics) "synced" else "none"}"
@@ -549,17 +651,29 @@ private fun isLowEndDevice(context: Context): Boolean {
 private fun rememberDeviceSideways(enabled: Boolean): Boolean {
     val context = LocalContext.current
     val showing = rememberStyleShowing()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var sideways by remember { mutableStateOf(false) }
+    var autoRotate by remember { mutableStateOf(true) }
+    DisposableEffect(context, enabled) {
+        val resolver = context.contentResolver
+        fun read() {
+            autoRotate = runCatching { Settings.System.getInt(resolver,
+                Settings.System.ACCELEROMETER_ROTATION, 1) == 1 }.getOrDefault(true)
+        }
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { read() }
+        }
+        if (enabled) {
+            read()
+            resolver.registerContentObserver(Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION), false, observer)
+        }
+        onDispose { if (enabled) resolver.unregisterContentObserver(observer) }
+    }
     val listener = remember(context) {
         object : OrientationEventListener(context.applicationContext) {
             override fun onOrientationChanged(orientation: Int) {
-                if (orientation == ORIENTATION_UNKNOWN) return
-                val autoRotate = runCatching {
-                    Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 1) == 1
-                }.getOrDefault(true)
-                // a band to enter and a wider one to leave, so it doesn't flutter at the edge
+                if (orientation == ORIENTATION_UNKNOWN || !autoRotate) return
                 val next = when {
-                    !autoRotate -> false
                     orientation in 250..290 -> true
                     orientation !in 220..320 -> false
                     else -> sideways
@@ -568,15 +682,21 @@ private fun rememberDeviceSideways(enabled: Boolean): Boolean {
             }
         }
     }
-    LaunchedEffect(enabled, listener) {
-        if (!enabled || !listener.canDetectOrientation()) {
-            sideways = false
-            return@LaunchedEffect
-        }
-        snapshotFlow { showing() }.collect { on -> if (on) listener.enable() else listener.disable() }
+    LaunchedEffect(enabled, autoRotate, listener, lifecycle, showing) {
+        try {
+            if (!enabled || !autoRotate || !listener.canDetectOrientation()) {
+                sideways = false
+                return@LaunchedEffect
+            }
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                try {
+                    snapshotFlow { showing() }.collect { on -> if (on) listener.enable() else listener.disable() }
+                } finally { listener.disable() }
+            }
+        } finally { listener.disable() }
     }
     DisposableEffect(listener) { onDispose { listener.disable() } }
-    return enabled && sideways
+    return enabled && autoRotate && sideways
 }
 
 /**
@@ -588,25 +708,39 @@ private fun rememberDeviceSideways(enabled: Boolean): Boolean {
 private fun ImmersiveWhileLandscape(active: Boolean) {
     val view = LocalView.current
     val showing = rememberStyleShowing()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     var on by remember { mutableStateOf(false) }
-    LaunchedEffect(active, showing) {
-        if (!active) {
-            on = false
-            return@LaunchedEffect
-        }
-        snapshotFlow { showing() }.collect { shown -> on = shown }
+    LaunchedEffect(active, showing, lifecycle) {
+        try {
+            if (!active) return@LaunchedEffect
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                try { snapshotFlow { showing() }.collect { shown -> on = shown } }
+                finally { on = false }
+            }
+        } finally { on = false }
     }
     DisposableEffect(view, on) {
         val window = view.context.findActivity()?.window
         val controller: WindowInsetsControllerCompat? = window?.let { WindowCompat.getInsetsController(it, view) }
-        var hid = false
+        var behaviour: Int? = null
+        var visibleTypes = 0
+        var hiddenTypes = 0
         if (on && controller != null) {
+            val root = androidx.core.view.ViewCompat.getRootWindowInsets(view)
+            val status = WindowInsetsCompat.Type.statusBars()
+            val nav = WindowInsetsCompat.Type.navigationBars()
+            if (root?.isVisible(status) != false) visibleTypes = visibleTypes or status else hiddenTypes = hiddenTypes or status
+            if (root?.isVisible(nav) != false) visibleTypes = visibleTypes or nav else hiddenTypes = hiddenTypes or nav
+            behaviour = controller.systemBarsBehavior
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
-            hid = true
         }
         onDispose {
-            if (hid) controller?.show(WindowInsetsCompat.Type.systemBars())
+            behaviour?.let { old ->
+                controller?.systemBarsBehavior = old
+                if (visibleTypes != 0) controller?.show(visibleTypes)
+                if (hiddenTypes != 0) controller?.hide(hiddenTypes)
+            }
         }
     }
 }

@@ -1,0 +1,19 @@
+Real production timeline probe — no stored text frames
+Row:   const memory =
+0ms [0]: 
+622ms [1]:  
+632ms [2]:   
+653ms [3]:   c
+676ms [4]:   co
+698ms [5]:   con
+714ms [6]:   cons
+730ms [7]:   const
+738ms [8]:   const 
+755ms [9]:   const m
+772ms [10]:   const me
+790ms [11]:   const mem
+809ms [12]:   const memo
+828ms [13]:   const memor
+847ms [14]:   const memory
+856ms [15]:   const memory 
+877ms [16]:   const memory =

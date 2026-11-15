@@ -1,0 +1,192 @@
+FINAL passing JVM tests + real core/renderer compilation
+========================================================
+JUnit version 4.13.2
+......................................................................
+Time: 0.31
+
+OK (70 tests)
+
+
+
+Syntax parsing ONLY (not UI compilation)
+========================================
+Syntax OK: TerminalPlayerStyle.kt
+Syntax OK: TerminalMarkerPreferences.kt
+Syntax OK: TerminalEnhancementOptions.kt
+Syntax OK: TerminalOptions.kt
+Syntax OK: PreferenceKeys.kt
+
+
+Production typing timeline console probe (test fixture)
+=======================================================
+Real production timeline probe — no stored text frames
+Row:   const memory =
+0ms [0]: 
+622ms [1]:  
+632ms [2]:   
+653ms [3]:   c
+676ms [4]:   co
+698ms [5]:   con
+714ms [6]:   cons
+730ms [7]:   const
+738ms [8]:   const 
+755ms [9]:   const m
+772ms [10]:   const me
+790ms [11]:   const mem
+809ms [12]:   const memo
+828ms [13]:   const memor
+847ms [14]:   const memory
+856ms [15]:   const memory 
+877ms [16]:   const memory =
+
+
+BEFORE low-band gate: expected false-bass regression failure
+============================================================
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalEmphasis.kt:53:88: warning: 'when' is exhaustive so 'else' is redundant here.
+                TerminalEmphasisKind.GENTLE->0.045f;TerminalEmphasisKind.CLIMAX->0.10f;else->0f}
+                                                                                       ^^^^
+JUnit version 4.13.2
+.........................................................E.....
+Time: 0.275
+There was 1 failure:
+1) upperBandTransientsAreNotBassBeats(com.vantra.music.ui.player.terminal.TerminalEnhancedTest)
+java.lang.AssertionError: steady bass plus changing upper bins must not kick expected:<0> but was:<19>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:120)
+	at com.vantra.music.ui.player.terminal.TerminalEnhancedTest.upperBandTransientsAreNotBassBeats(TerminalEnhancedTest.kt:75)
+
+FAILURES!!!
+Tests run: 62,  Failures: 1
+
+
+
+BEFORE timed-peak fix: expected regression failure
+==================================================
+JUnit version 4.13.2
+.................................................................E.....
+Time: 0.288
+There was 1 failure:
+1) cameraReachesTheManualPeakWithoutASecondSlowZoomFilter(com.vantra.music.ui.player.terminal.TerminalEnhancedTest)
+java.lang.AssertionError: expected:<0.075> but was:<0.04478252>
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.failNotEquals(Assert.java:835)
+	at org.junit.Assert.assertEquals(Assert.java:577)
+	at org.junit.Assert.assertEquals(Assert.java:701)
+	at com.vantra.music.ui.player.terminal.TerminalEnhancedTest.cameraReachesTheManualPeakWithoutASecondSlowZoomFilter(TerminalEnhancedTest.kt:163)
+
+FAILURES!!!
+Tests run: 70,  Failures: 1
+
+
+
+Signing suite: throwaway key
+============================
+PASS create keystore
+PASS keystore file written
+PASS keystore is mode 600
+PASS create output has no password
+PASS verify: good secrets and pinned fingerprint
+PASS verify: wrong store password fails
+PASS verify: wrong alias fails
+PASS verify: differing key password fails
+PASS verify: UNSET pin fails
+PASS UNSET message shows the fingerprint to pin
+PASS verify: wrong pinned certificate fails
+PASS verify: corrupted keystore fails
+PASS restore: valid secrets verify and sign
+PASS restore: decoded keystore is byte-identical
+PASS restore: reports signed=true
+PASS restore: invalid base64 fails
+PASS restore: missing store password on push fails
+PASS restore: only keystore + store password (the real CI case) passes
+PASS restore: alias read from the keystore into the step output
+PASS restore: only one of the two required secrets fails
+PASS verify: two keys and no alias is ambiguous and fails
+PASS restore: pull request without secrets builds unsigned
+PASS pull request reports signed=false
+PASS create: refuses to overwrite an existing keystore
+PASS apk: single signer matching the pin passes
+PASS apk: different signer fails
+PASS apk: two signers fails
+PASS apk: apksigner rejecting the file fails
+PASS compare: same key is MATCH (exit 0)
+PASS compare: colon-separated fingerprint accepted
+PASS compare: other certificate is MISMATCH (exit 10)
+PASS compare: no secrets is SECRETS_MISSING (exit 11)
+PASS compare: wrong password is KEYSTORE_UNUSABLE (exit 12)
+PASS compare: wrong alias still compares by fingerprint (exit 0)
+PASS compare: no alias, no key password: MATCH (exit 0)
+PASS compare: alias is discovered and reported
+PASS compare: key password status reported (PKCS12)
+PASS compare: no alias, other certificate: MISMATCH (exit 10)
+PASS compare: no alias, wrong store password: KEYSTORE_UNUSABLE (exit 12)
+PASS compare: store password missing: SECRETS_MISSING (exit 11)
+PASS compare: JKS with different key password: MATCH (exit 0)
+PASS compare: JKS reports key-password limitation and alias
+PASS compare: garbage base64 is KEYSTORE_UNUSABLE (exit 12)
+PASS compare: malformed installed fingerprint is a usage error (exit 1)
+PASS compare: leaves keystore and pinned file unchanged
+PASS compare: summary written
+PASS apk reader: v2 certificate equals keystore fingerprint
+PASS apk reader: two signers are both reported
+PASS apk reader: unsigned APK fails
+PASS apk reader: not an APK fails
+PASS compare: APK input matches its key (exit 0)
+PASS compare: two-signer APK is refused (exit 1)
+PASS no password in any script output
+
+passed: 53   failed: 0
+
+
+Real Journal restore scenarios
+==============================
+PASS 1a replaced file has new content
+PASS 1b committed import keeps new data
+PASS 1c rollback folder gone after commit
+PASS 2a library restored
+PASS 2b wal restored
+PASS 2c media restored
+PASS 2d shared pref restored
+PASS 2e datastore restored
+PASS 2f imported-only file removed
+PASS 2g rollback folder cleared
+PASS 3a double undo keeps original
+PASS 4a interrupted folder restored with its content
+PASS 4b imported junk gone
+PASS 5a in-place edit rolled back
+PASS 6a file created by the import is removed
+ALL PASSED
+
+
+Actual Android build attempt: BLOCKED
+=====================================
+Downloading https://mirrors.cloud.tencent.com/gradle/gradle-9.3.1-bin.zip
+
+Exception in thread "main" java.net.SocketException: Network is unreachable
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:601)
+	at java.base/sun.nio.ch.Net.connect(Net.java:590)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:583)
+	at java.base/java.net.Socket.connect(Socket.java:751)
+	at java.base/sun.net.NetworkClient.doConnect(NetworkClient.java:178)
+	at java.base/sun.net.www.http.HttpClient.openServer(HttpClient.java:539)
+	at java.base/sun.net.www.http.HttpClient$1.run(HttpClient.java:598)
+	at java.base/sun.net.www.http.HttpClient$1.run(HttpClient.java:596)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:571)
+	at java.base/sun.net.www.http.HttpClient.privilegedOpenServer(HttpClient.java:595)
+	at java.base/sun.net.www.http.HttpClient.openServer(HttpClient.java:639)
+	at java.base/sun.net.www.protocol.https.HttpsClient.<init>(HttpsClient.java:265)
+	at java.base/sun.net.www.protocol.https.HttpsClient.New(HttpsClient.java:378)
+	at java.base/sun.net.www.protocol.https.AbstractDelegateHttpsURLConnection.getNewHttpClient(AbstractDelegateHttpsURLConnection.java:205)
+	at java.base/sun.net.www.protocol.http.HttpURLConnection.plainConnect0(HttpURLConnection.java:1281)
+	at java.base/sun.net.www.protocol.http.HttpURLConnection.plainConnect(HttpURLConnection.java:1146)
+	at java.base/sun.net.www.protocol.http.HttpURLConnection.connect(HttpURLConnection.java:1075)
+	at java.base/sun.net.www.protocol.https.AbstractDelegateHttpsURLConnection.connect(AbstractDelegateHttpsURLConnection.java:181)
+	at java.base/sun.net.www.protocol.http.HttpURLConnection.getInputStream0(HttpURLConnection.java:1707)
+	at java.base/sun.net.www.protocol.http.HttpURLConnection.getInputStream(HttpURLConnection.java:1632)
+	at java.base/java.net.HttpURLConnection.getResponseCode(HttpURLConnection.java:531)
+	at java.base/sun.net.www.protocol.https.HttpsURLConnectionImpl.getResponseCode(HttpsURLConnectionImpl.java:307)
+	at org.gradle.wrapper.Install.forceFetch(SourceFile:2)
+	at org.gradle.wrapper.Install$1.call(SourceFile:8)
+	at org.gradle.wrapper.GradleWrapperMain.main(SourceFile:67)

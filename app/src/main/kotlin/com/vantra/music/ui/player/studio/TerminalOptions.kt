@@ -33,6 +33,7 @@ internal fun ColumnScope.TerminalOptions() {
         }
         SwitchRow(TerminalBeatOption)
         SwitchRow(TerminalTypingOption)
+        TerminalEnhancementOptions()
         TerminalQuality.entries.forEachIndexed { index, option ->
             OptionRow(
                 selected = quality == option,

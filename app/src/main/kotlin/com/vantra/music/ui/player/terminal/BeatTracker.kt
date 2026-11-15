@@ -9,8 +9,11 @@ enum class BeatSource {
     /** the decoded audio, read at the playback position: real onsets and bass */
     AUDIO,
 
-    /** no audio to read (a source the player can't tap): the camera only eases on lyric line changes, no beats are claimed */
+    /** no audio to read (a source the player can't tap): lyric timestamps drive the scene, no beats are claimed */
     LYRIC_TIMING,
+
+    /** no synced lyrics or audio analysis: only the authoritative playback clock drives the scene */
+    PLAYBACK_TIMING,
 
     /** nothing playing, or beat reactions switched off */
     NONE,
@@ -45,6 +48,12 @@ class BeatTracker(val bandCount: Int = 40) {
     var kickCount = 0
         private set
 
+    /** Smoothed relative low-band power proxy, reconstructed from the spectrum's dB scale. */
+    var lowEnergy = 0f; private set
+    var bassDrive = 0f; private set
+    private var energyFloor = 0f
+    private var riseMean = 0f
+    private var riseVar = 0f
     private var primed = false
     private var fluxMean = 0f
     private var fluxVar = 0f
@@ -58,6 +67,7 @@ class BeatTracker(val bandCount: Int = 40) {
         primed = false
         fluxMean = 0f
         fluxVar = 0f
+        riseMean = 0f; riseVar = 0f
         sinceKick = 10f
         warm = 0f
         kick = 0f
@@ -68,6 +78,7 @@ class BeatTracker(val bandCount: Int = 40) {
         reset()
         bass = 0f
         energy = 0f
+        lowEnergy = 0f; bassDrive = 0f; energyFloor = 0f
         kickCount = 0
     }
 
@@ -82,6 +93,8 @@ class BeatTracker(val bandCount: Int = 40) {
             // nothing to read: let everything settle and start over when it comes back
             bass += (0f - bass) * smoothing(h, 0.2f)
             energy += (0f - energy) * smoothing(h, 1.5f)
+            lowEnergy += (0f-lowEnergy)*smoothing(h,0.18f)
+            bassDrive += (0f-bassDrive)*smoothing(h,0.18f)
             primed = false
             warm = 0f
             return
@@ -90,6 +103,12 @@ class BeatTracker(val bandCount: Int = 40) {
         var low = 0f
         for (i in 0 until BassBands) low += bands[i]
         low /= BassBands
+        var power = 0f
+        for (i in 0 until BassBands) power += Math.pow(10.0, (bands[i].coerceIn(0f,1f)*56f-62f)/10.0).toFloat()
+        power /= BassBands
+        lowEnergy += (power-lowEnergy)*smoothing(h,if(power>lowEnergy) 0.018f else 0.18f)
+        energyFloor += (lowEnergy-energyFloor)*smoothing(h,1.4f)
+        bassDrive = ((lowEnergy-energyFloor*0.85f)/(energyFloor*0.65f+0.0005f)).coerceIn(0f,1f)
         val tau = if (low > bass) 0.04f else 0.22f
         bass += (low - bass) * smoothing(h, tau)
 
@@ -105,12 +124,17 @@ class BeatTracker(val bandCount: Int = 40) {
         }
 
         var flux = 0f
+        var lowRise = 0f
         for (i in 0 until FluxBands) {
             val rise = bands[i] - previous[i]
-            if (rise > 0f) flux += rise * (if (i < BassBands) 1f else 0.5f)
+            if (rise > 0f) {
+                flux += rise * (if (i < BassBands) 1f else 0.5f)
+                if(i < BassBands) lowRise += rise
+            }
         }
         System.arraycopy(bands, 0, previous, 0, bandCount)
         flux /= (FluxBands * h)
+        lowRise /= (BassBands*h)
 
         warm += h
         sinceKick += h
@@ -119,8 +143,12 @@ class BeatTracker(val bandCount: Int = 40) {
         fluxMean += a * diff
         fluxVar += a * (diff * diff - fluxVar)
         val deviation = sqrt(max(fluxVar, 0f))
+        val riseDiff = lowRise-riseMean
+        riseMean += a*riseDiff
+        riseVar += a*(riseDiff*riseDiff-riseVar)
+        val lowTransient = lowRise>0.35f && lowRise>riseMean+sqrt(max(riseVar,0f))
 
-        if (warm >= WarmSeconds && sinceKick >= RefractorySeconds && bass > MinBass &&
+        if (warm >= WarmSeconds && sinceKick >= RefractorySeconds && bass > MinBass && lowTransient &&
             flux > MinFlux && flux > fluxMean + 1.5f * deviation
         ) {
             val strength = ((flux - fluxMean) / (deviation * 4f + 0.5f)).coerceIn(0.25f, 1f)

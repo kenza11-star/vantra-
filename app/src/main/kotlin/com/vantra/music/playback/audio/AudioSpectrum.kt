@@ -154,7 +154,10 @@ class AudioSpectrum {
             val a = if (before >= 0) before else after
             val b = if (after >= 0) after else before
             if (a < 0 || b < 0) return false
-            if (positionMs - times[a] > StaleMs && times[b] - positionMs > StaleMs) return false
+            // Either neighbour can be missing: a and b then refer to the SAME frame.
+            // Signed distances with && never expired that one-sided history.
+            val nearest = minOf(kotlin.math.abs(positionMs - times[a]), kotlin.math.abs(positionMs - times[b]))
+            if (nearest > StaleMs) return false
             val span = (times[b] - times[a]).toFloat()
             val t = if (span > 0f) ((positionMs - times[a]) / span).coerceIn(0f, 1f) else 0f
             val fa = frames[a]

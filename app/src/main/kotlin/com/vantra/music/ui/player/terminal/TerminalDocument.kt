@@ -186,6 +186,13 @@ internal class TerminalDocument private constructor(
         if (line.lyricCount <= capacity) line.lyricFirst else
             (cursor.row - capacity / 2).coerceIn(line.lyricFirst, line.lyricFirst + line.lyricCount - capacity)
 
+    /** Stable selection key: ordinary wrapping does not change which rows are visible. */
+    fun viewportAnchor(cursor: TerminalCursor, maxRows: Int): Int {
+        val line = lines.getOrNull(cursor.line)
+        if (line == null || cursor.idle || line.lyricCount == 0) return cursor.row
+        return firstVisibleLyric(line, cursor, lyricCapacity(line, max(5, maxRows)))
+    }
+
     /** Editor folding keeps neighboring real strings inside short landscape viewports.
      * The document is unchanged; skipped line numbers identify folded scaffolding. */
     fun viewportRows(cursor: TerminalCursor, maxRows: Int): IntArray {
@@ -344,7 +351,7 @@ internal class TerminalDocument private constructor(
         private fun number(rows: ArrayList<TerminalRow>) = (rows.size + 1).toString().padStart(3)
 
         private fun isAscii(s: String): Boolean {
-            for (ch in s) if (ch.code > 126) return false
+            for (ch in s) if (ch.code !in 32..126) return false
             return true
         }
 

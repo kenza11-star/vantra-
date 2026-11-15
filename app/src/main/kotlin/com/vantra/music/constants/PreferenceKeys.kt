@@ -726,6 +726,25 @@ val TerminalTypingKey = booleanPreferencesKey("terminalTyping")
 val TerminalQualityKey = stringPreferencesKey("terminalQuality")
 val TerminalOrientationKey = stringPreferencesKey("terminalOrientation")
 
+/** Terminal enhancement preferences retain the existing typing/beat switches. */
+enum class TerminalTypingSpeed(val title:String,val description:String,val scale:Float) {
+    SLOW("Slow","deliberate cadence, bounded by each lyric interval",0.65f),
+    NORMAL("Normal","natural code cadence",1f),
+    FAST("Fast","faster code progression",1.6f),
+}
+enum class TerminalBassResponse(val title:String,val description:String,val scale:Float) {
+    OFF("Off","no audio camera reaction",0f), SUBTLE("Subtle","light low-frequency response",0.55f),
+    NORMAL("Normal","short, controlled bass impulses",1f), STRONG("Strong","stronger impulses within readability limits",1.6f),
+}
+enum class TerminalEmotionalZoom(val title:String,val description:String,val scale:Float) {
+    OFF("Off","manual marker zoom disabled",0f), SUBTLE("Subtle","gentle marker focus",0.55f),
+    NORMAL("Normal","timestamped cinematic emphasis",1f), STRONG("Strong","stronger focus, still bounded",1.5f),
+}
+val TerminalTypingSpeedKey = stringPreferencesKey("terminalTypingSpeedV1")
+val TerminalBassResponseKey = stringPreferencesKey("terminalBassResponseV1")
+val TerminalEmotionalZoomKey = stringPreferencesKey("terminalEmotionalZoomV1")
+val TerminalEmphasisMarkersKey = stringPreferencesKey("terminalEmphasisMarkersV1")
+
 // the ipod player's body colours, ipod.js's three plus a pitch black one with a dark screen
 enum class IpodTheme { SILVER, BLACK, U2, TRUE_DARK }
 

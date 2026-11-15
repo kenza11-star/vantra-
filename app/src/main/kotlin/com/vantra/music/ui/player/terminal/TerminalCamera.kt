@@ -42,42 +42,73 @@ class TerminalCamera {
     val dolly = Spring()
     val panX = Spring()
     val panY = Spring()
+    /** Small optical-axis emphasis, enabled only by the caller's verified audio-analysis gate. */
+    val beatDolly = Spring()
+    val emotionalDolly = Spring()
+
+    fun clearAudioReaction() { beatDolly.snap(0f) }
 
     /** the resting composition the drift moves around: the camera's own angle onto the page, set per orientation */
     var baseYaw = 0f
     var basePitch = 0f
 
     fun reset() {
-        yaw.snap(0f); pitch.snap(0f); roll.snap(0f); dolly.snap(0f); panX.snap(0f); panY.snap(0f)
+        yaw.snap(0f); pitch.snap(0f); roll.snap(0f); dolly.snap(0f); panX.snap(0f); panY.snap(0f); emotionalDolly.snap(0f); clearAudioReaction()
     }
 
     /** [progress] is real lyric-interval progress; [idle] comes from the timed document, not audio guesses.
-     * [kick] remains source-compatible but intentionally cannot shake this camera.
+     * [kick] is an onset envelope from real current audio only when [audioReactive] is true.
+     * The default preserves Stage 2's unshaken cinematic path for every fallback source.
      */
-    @Suppress("UNUSED_PARAMETER")
     fun update(dt: Float, timeS: Float, intensity: Float, bass: Float, energy: Float, kick: Float,
-               wide: Boolean, follow: Float = 0f, progress: Float = 0f, idle: Boolean = false) {
+               wide: Boolean, follow: Float = 0f, progress: Float = 0f, idle: Boolean = false,
+               audioReactive: Boolean = false, intent: TerminalCameraIntent? = null) {
         val k = intensity.coerceIn(0f, 1.6f)
         if (k == 0f) {
             reset()
             yaw.snap(baseYaw); pitch.snap(basePitch)
             return
         }
-        val w = if (wide) 1.15f else 1f
+        val pulse = if (audioReactive) kick.coerceIn(0f, 1f) else 0f
+        val focus = intent?.focusWeight?.coerceIn(0f,1f) ?: 0f
+        val still = intent?.stillness?.coerceIn(0f,1f) ?: 0f
+        val movement = (1f-0.80f*focus)*(1f-still)
+        val bassGain = (intent?.bassGain ?: 1f).coerceIn(0f,1.6f)
+        if(intent == null) beatDolly.step(dt,0.014f*k*pulse,196f,28f)
+        else {
+            val onset = if(audioReactive && !intent.reconstruct) intent.onset.coerceIn(0f,1f) else 0f
+            val priority = (1f-0.75f*focus+0.25f*(intent.climax.coerceIn(0f,1f))*focus)*(1f-still)
+            if(onset>0f) beatDolly.kick(2.2f*onset*k*bassGain*priority)
+            beatDolly.step(dt,if(audioReactive) 0.010f*bass.coerceIn(0f,1f)*k*bassGain*priority else 0f,225f,30f)
+            if(beatDolly.value>0.09f) {beatDolly.value=0.09f;beatDolly.velocity=minOf(0f,beatDolly.velocity)}
+            beatDolly.value=beatDolly.value.coerceAtLeast(0f)
+        }
+        val focusTarget = (intent?.focusZoom ?: 0f).coerceIn(0f,0.14f)
+        // The marker already supplies a C2-continuous timed curve. A second slow spring would
+        // miss its timestamped peak. Only limit abrupt edits/remote-clock jumps; normal curves
+        // pass through unchanged, and an explicit local seek reconstructs immediately.
+        if(intent?.reconstruct == true) emotionalDolly.snap(focusTarget)
+        else {
+            val limit=0.9f*dt.coerceIn(0f,0.05f)
+            emotionalDolly.value += (focusTarget-emotionalDolly.value).coerceIn(-limit,limit)
+            emotionalDolly.velocity=0f
+        }
+        val section = if (audioReactive) energy.coerceIn(0f, 1f) else 0f
+        val w = (if (wide) 1.15f else 1f) * (1f + 0.15f * section) * movement
         val t = timeS
         // A restrained travelling shot, not an orbit around disconnected rows.
-        val yawT = (baseYaw + k * (0.035f * sin(t * 0.085f) + 0.012f * follow))
+        val yawT = (baseYaw + k * movement * (0.035f * sin(t * 0.085f) + 0.012f * follow))
             .coerceIn(-0.18f, 0.18f)
-        val pitchT = (basePitch + k * (0.018f * sin(t * 0.11f) - 0.009f * follow))
+        val pitchT = (basePitch + k * movement * (0.018f * sin(t * 0.11f) - 0.009f * follow))
             .coerceIn(-0.12f, 0.12f)
-        val rollT = 0.008f * k * sin(t * 0.07f)
+        val rollT = 0.008f * k * movement * sin(t * 0.07f)
         // Quintic easing gives zero speed/acceleration at both ends of each lyric interval.
         val p = progress.coerceIn(0f, 1f)
         val eased = p * p * p * (p * (p * 6f - 15f) + 10f)
-        val dollyT = k * (0.012f * sin(t * 0.035f) + if (idle) -0.065f else
+        val dollyT = k * (1f-focus) * (1f-still) * (0.012f * sin(t * 0.035f) + if (idle) -0.065f else
             0.035f * eased + 0.008f * bass.coerceIn(0f, 1f) + 0.006f * energy.coerceIn(0f, 1f))
         val panXT = k * w * (0.026f * sin(t * 0.095f) + 0.009f * follow.coerceIn(-1f, 1f))
-        val panYT = k * 0.009f * sin(t * 0.075f)
+        val panYT = k * movement * 0.009f * sin(t * 0.075f)
 
         // Near-critical damping: smooth focus changes without overshoot on a new lyric or seek.
         yaw.step(dt, yawT, 16f, 8f)
@@ -86,6 +117,13 @@ class TerminalCamera {
         dolly.step(dt, dollyT, 12f, 7f)
         panX.step(dt, panXT, 12f, 7f)
         panY.step(dt, panYT, 12f, 7f)
+    }
+
+    fun combinedDolly(): Float {
+        val focus=emotionalDolly.value.coerceIn(0f,0.14f)
+        val beat=beatDolly.value.coerceIn(0f,minOf(0.09f,0.18f-focus))
+        val drift=dolly.value.coerceIn(-0.12f,minOf(0.06f,0.18f-focus-beat))
+        return (focus+beat+drift).coerceIn(-0.12f,0.18f)
     }
 
 }
@@ -115,11 +153,12 @@ class TerminalProjector {
         cyScreen = centerY
         focal = focalPx
         // dolly toward the text shortens the camera's distance from the focal plane
-        distance = focalPx * (1f - camera.dolly.value.coerceIn(-0.4f, 0.6f))
+        distance = focalPx * (1f - camera.combinedDolly())
         panX = camera.panX.value * focalPx
         panY = camera.panY.value * focalPx
         cy = cos(camera.yaw.value); sy = sin(camera.yaw.value)
-        cp = cos(camera.pitch.value); sp = sin(camera.pitch.value)
+        val viewPitch=(camera.pitch.value-camera.beatDolly.value*0.06f).coerceIn(-0.13f,0.13f)
+        cp = cos(viewPitch); sp = sin(viewPitch)
         cr = cos(camera.roll.value); sr = sin(camera.roll.value)
     }
 

@@ -1,0 +1,7 @@
+# Terminal V3 final integration plan
+
+1. Replace only Terminal's use of the shared double-composition rotation wrapper with one retained Terminal frame. Preserve gestures and native controls; leave every other style's source unchanged. Map all physical safe insets through the clockwise quarter turn.
+2. Tie sensor and fullscreen-bar ownership to RESUMED/visible state, disable sensor on all cancellation/setting paths, observe auto-rotate outside sensor callbacks and restore prior system-bar behaviour/visibility.
+3. Keep controls available for accessibility/focus/menu/pause; restart a 3.5-second timeout after interaction. Add a semantics action for revealing controls and text semantics for Canvas lyrics. Avoid hiding focusable controls during fades.
+4. Avoid viewport rebuilding on every ordinary wrapped lyric row; cache ASCII advances and the measured lyric cell. Harden first-layout/zero-size/font-scale invalidation. Keep LOW truthful (no beat glow) and retain existing persistent preference keys.
+5. Pin these decisions with JVM regression/policy tests, retain all Stage 1–3 tests, run available signing/restore tests, attempt actual Android build, parse the changed UI and audit preservation of all original non-Terminal files. Package final source, changelog, changed list, actual verification and limitations. Do not claim device acceptance or production readiness without device/build evidence.

@@ -1,0 +1,28 @@
+Baseline: Vantra-Terminal-V3-Stage3.zip
+Original file members: 5081
+Modified: 3
+Unchanged originals: 5078
+Added: 10
+Deleted: 0
+
+MODIFIED (relative to Stage 3)
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalDocument.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalPlayerStyle.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalRenderer.kt
+
+ADDED
+CHANGES-TERMINAL-V3-FINAL.md
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalControls.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalFrame.kt
+app/src/main/kotlin/com/vantra/music/ui/player/terminal/TerminalPresentation.kt
+app/src/test/kotlin/com/vantra/music/ui/player/terminal/TerminalPolishTest.kt
+docs/terminal-v3/FINAL-ARCHIVE-AUDIT.txt
+docs/terminal-v3/FINAL-CHANGED-FILES.txt
+docs/terminal-v3/FINAL-REPORT.md
+docs/terminal-v3/FINAL-VERIFICATION.txt
+docs/terminal-v3/STAGE4-PLAN.md
+
+DELETED
+None
+
+Packaging checks executed: CRC validation, duplicate-name check, exact comparison of all unchanged source members, and changed/new member comparison with local source.
