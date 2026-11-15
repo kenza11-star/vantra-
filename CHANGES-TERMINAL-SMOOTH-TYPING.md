@@ -50,3 +50,42 @@ Dari video 529672.mp4: kotak editor tampak biru-navy dengan tepi tajam, dan lata
   quiet window title" di `draw()` kalau tidak mau.
 - Garis gutter dan indent guide dinetralkan (tidak lagi kebiruan).
 - Kamera tidak diubah (sudah teredam: yaw maks ±10°).
+
+## Update 3: gaya sinematik (video 529734) + mode phonk/montagem (video 529732, 529733)
+**Status: belum dikompilasi/dijalankan.** Cek CI atau
+`./gradlew :app:testFossDebugUnitTest --tests "com.vantra.music.ui.player.terminal.*"`.
+
+### Gaya sinematik (referensi: video terminal)
+- **Close-up mengikuti kursor**: baris yang diketik di-zoom (±15 kolom di portrait, ±26 di landscape),
+  kamera menggeser halus mengikuti kursor, baris lama meredup ke atas. Hanya aktif jika Typing
+  nyala dan lirik tersinkron ada; selain itu tampilan editor biasa.
+- **Kursor blok merah** dengan glow (menggantikan garis tipis cyan). Keyword jadi merah
+  (`TerminalPalette.Keyword`), aksen `TerminalPalette.Cursor` merah.
+- **Refleksi** samar di bawah baris yang sedang diketik.
+- **Pull-back ke "dinding kode" miring + bola cahaya oranye** saat instrumental/intro/outro,
+  penanda `climax`, dan breakdown phonk. Panel samping, garis tepi, dan title bar hilang di dua shot ini.
+- Kamera: `TerminalCamera.shotPitch/shotYaw/shotRoll/shotDolly` (nol = tidak ada efek).
+
+### Mode phonk/montagem (referensi: dua video phonk)
+Terdeteksi otomatis dari audio (`TerminalCinema`): kick stabil 85-200 BPM + bass berat. Lagu
+ritme acak, balada, atau tanpa audio lokal tidak memicu apa pun. Analisis video referensi:
+kick ±152 BPM (interval 0,395 dtk), breakdown tanpa bass, lalu drop.
+- Hentakan zoom (punch) + miring bergantian tiap kick.
+- Flash hitam-putih dengan teks terbalik: tiap kick ke-2, **maksimal ±2,6x/detik** (aman untuk
+  sensitif cahaya). Mati jika Reduced Motion atau Intensity = Off.
+- Garis kecepatan radial, RGB split pada lirik aktif.
+- Breakdown (bass hilang >0,8 dtk): kamera mundur ke dinding + bola cahaya.
+  Kick yang kembali = **drop**: flash penuh, hentakan besar, banting masuk ke close-up.
+- Skala efek mengikuti "Bass response" di pengaturan; hanya berjalan jika Beat reactive nyala.
+
+### Penyetel
+`TerminalCinema` (MinGap/MaxGap, FlashGap, ambang `score`), `closeZoom`/`cols` dan pan spring di
+`TerminalRenderer.draw`, sudut dinding di `TerminalPlayerStyle` (`-0.50f` pitch dll).
+
+### Belum dikerjakan
+Kinetic typography kata-per-kata dan CD cover berputar seperti di video phonk (perlu artwork
+bitmap di renderer); bisa jadi tahap berikutnya.
+
+### Test baru
+`TerminalCinemaTest`: lock phonk, ritme acak/balada tidak memicu, batas laju flash,
+breakdown -> dinding -> drop -> close-up, shot mengikuti lirik, motion off = nol efek.

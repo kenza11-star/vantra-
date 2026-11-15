@@ -244,6 +244,8 @@ private class SceneState {
     val scroll = Spring()
     val codeCaret = TerminalCodeCaret()
     val clock = TerminalPlayClock()
+    val cinema = TerminalCinema()
+    val fx = TerminalFx()
     var typingTimeline: TerminalTypingTimeline? = null
     var typingTimeMs = 0L
     var typingSpeed = 1f
@@ -470,6 +472,20 @@ private fun TerminalScene(
                                     if (audio) s.sync.tracker.energy else 0f,
                                     s.sync.pulse, landscapeNow, s.followX, progress, s.cursor.idle,
                                     audioReactive = audio, intent=s.intent)
+                                // Shots (close-up / wall) and the phonk beat effects share one controller.
+                                val beat = s.sync.tracker
+                                s.cinema.update(stepDt,
+                                    kick = if (audio) beat.kick else 0f, bass = if (audio) beat.bass else 0f,
+                                    bassDrive = if (audio) beat.bassDrive else 0f, energy = if (audio) beat.energy else 0f,
+                                    audio = audio, motion = !motionOff, typing = s.typingEnabled,
+                                    idle = s.cursor.idle, hasLyrics = !activeDoc.isEmpty,
+                                    climax = s.emphasis.climax, jump = s.sync.timelineJump,
+                                    gain = prefs.bassGain, out = s.fx)
+                                val wallNow = s.fx.wall
+                                s.camera.shotPitch.step(stepDt, -0.50f * wallNow, 14f, 8f)
+                                s.camera.shotYaw.step(stepDt, 0.18f * wallNow, 14f, 8f)
+                                s.camera.shotRoll.step(stepDt, -0.07f * wallNow, 14f, 8f)
+                                s.camera.shotDolly.step(stepDt, -0.10f * wallNow, 14f, 8f)
                                 val glowTarget = if (audio) s.sync.tracker.bass else 0.1f
                                 s.glow += (glowTarget - s.glow) * (1f - kotlin.math.exp(-stepDt / 0.18f))
                                 s.solidCursor = playing && s.typingEnabled && s.codeCaret.active
@@ -514,6 +530,7 @@ private fun TerminalScene(
                         typingSpeed=if(initial) typingSpeed.scale else state.typingSpeed,
                         typingEnabled=if(initial) !preview && typingPref && AppMotion.durationScale.scaleFactor!=0f else state.typingEnabled,
                         codeCaret=state.codeCaret,
+                        fx=state.fx,
                     )
                 }
             },

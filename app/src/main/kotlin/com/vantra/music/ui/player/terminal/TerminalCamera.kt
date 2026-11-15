@@ -46,6 +46,12 @@ class TerminalCamera {
     val beatDolly = Spring()
     val emotionalDolly = Spring()
 
+    /** Extra view angles for the pulled-back wall shot, set by the Terminal's shot logic (TerminalCinema). */
+    val shotPitch = Spring()
+    val shotYaw = Spring()
+    val shotRoll = Spring()
+    val shotDolly = Spring()
+
     fun clearAudioReaction() { beatDolly.snap(0f) }
 
     /** the resting composition the drift moves around: the camera's own angle onto the page, set per orientation */
@@ -54,6 +60,7 @@ class TerminalCamera {
 
     fun reset() {
         yaw.snap(0f); pitch.snap(0f); roll.snap(0f); dolly.snap(0f); panX.snap(0f); panY.snap(0f); emotionalDolly.snap(0f); clearAudioReaction()
+        shotPitch.snap(0f); shotYaw.snap(0f); shotRoll.snap(0f); shotDolly.snap(0f)
     }
 
     /** [progress] is real lyric-interval progress; [idle] comes from the timed document, not audio guesses.
@@ -123,7 +130,8 @@ class TerminalCamera {
         val focus=emotionalDolly.value.coerceIn(0f,0.14f)
         val beat=beatDolly.value.coerceIn(0f,minOf(0.09f,0.18f-focus))
         val drift=dolly.value.coerceIn(-0.12f,minOf(0.06f,0.18f-focus-beat))
-        return (focus+beat+drift).coerceIn(-0.12f,0.18f)
+        val shot=shotDolly.value.coerceIn(-0.2f,0f)
+        return (focus+beat+drift+shot).coerceIn(-0.24f,0.18f)
     }
 
 }
@@ -156,10 +164,10 @@ class TerminalProjector {
         distance = focalPx * (1f - camera.combinedDolly())
         panX = camera.panX.value * focalPx
         panY = camera.panY.value * focalPx
-        cy = cos(camera.yaw.value); sy = sin(camera.yaw.value)
-        val viewPitch=(camera.pitch.value-camera.beatDolly.value*0.06f).coerceIn(-0.13f,0.13f)
+        cy = cos(camera.yaw.value + camera.shotYaw.value); sy = sin(camera.yaw.value + camera.shotYaw.value)
+        val viewPitch=(camera.pitch.value-camera.beatDolly.value*0.06f).coerceIn(-0.13f,0.13f)+camera.shotPitch.value
         cp = cos(viewPitch); sp = sin(viewPitch)
-        cr = cos(camera.roll.value); sr = sin(camera.roll.value)
+        cr = cos(camera.roll.value + camera.shotRoll.value); sr = sin(camera.roll.value + camera.shotRoll.value)
     }
 
     /** the scale a plane at world depth [z] gets, for fading and sorting; 0 if it is at or behind the camera */

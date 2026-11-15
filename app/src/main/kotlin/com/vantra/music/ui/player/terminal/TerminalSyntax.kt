@@ -5,7 +5,7 @@ import kotlin.math.min
 /** The editor palette, as ARGB ints so drawing never builds a Color. */
 internal object TerminalPalette {
     /** control flow: if else while for switch case break continue return */
-    const val Keyword = 0xFFFF9A82.toInt()
+    const val Keyword = 0xFFFF4D4F.toInt()
 
     /** declarations: const let var fun class object function async await suspend emit collect */
     const val Declare = 0xFF79B8FF.toInt()
@@ -22,7 +22,7 @@ internal object TerminalPalette {
     /** the song's own words: high-contrast neutral ink, distinct from syntax colours */
     const val Lyric = 0xFFF5F7FA.toInt()
     const val Gutter = 0xFF5B6370.toInt()
-    const val Cursor = 0xFF8BE9FD.toInt()
+    const val Cursor = 0xFFE5242B.toInt()
     const val Glow = 0xFFFF8A3D.toInt()
 
     /** nested brackets cycle through these, by depth */
