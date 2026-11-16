@@ -28,6 +28,12 @@ internal class TerminalFx {
     var lineSeed = 0
     var bpm = 0f
 
+    /** colour (0xRRGGBB) of the flash: white, magenta, cyan or red, whatever the current cut is */
+    var flashColor = 0xFFFFFF
+
+    /** 0..1 how hard the picture is glitching: colour-channel split, torn slices, bars, scanlines */
+    var glitch = 0f
+
     /** progress 0..1 of the shockwave ring of the last hit, -1 when there is none */
     var ring = -1f
     var ringPower = 0f
@@ -36,6 +42,7 @@ internal class TerminalFx {
         close = 0f; wall = 0f; orb = 0f; phonk = 0f
         punch = 0f; tilt = 0f; flash = 0f; lines = 0f; split = 0f; bpm = 0f
         ring = -1f; ringPower = 0f
+        flashColor = 0xFFFFFF; glitch = 0f
     }
 }
 
@@ -68,6 +75,10 @@ internal class TerminalCinema {
     private var flashPeak = 1f
     private var flashTwice = false
     private var flashCycle = 0
+    private var flashRgb = 0xFFFFFF
+    private var flashRgb2 = 0xFFFFFF
+    private var glitch = 0f
+    private var glitchLong = 0f
     private var ringAge = 99f
     private var ringSpan = 0.45f
     private var ringPower = 0f
@@ -101,6 +112,7 @@ internal class TerminalCinema {
         parity = 0
         punch = 0f; lines = 0f; drop = 0f
         flashAge = 99f; ringAge = 99f; lastAmount = 0f
+        glitch = 0f; glitchLong = 0f
         bpm = 0f
     }
 
@@ -143,6 +155,8 @@ internal class TerminalCinema {
         punch *= exp(-h / 0.15f)
         flashAge += h
         ringAge += h
+        glitch *= exp(-h / 0.12f)
+        glitchLong *= exp(-h / 0.35f)
         lines *= exp(-h / 0.20f)
         drop *= exp(-h / 0.45f)
 
@@ -160,16 +174,22 @@ internal class TerminalCinema {
             tiltSign = -tiltSign
             parity++
             lines = max(lines, 0.3f + 0.5f * strength)
-            // Only music that has proved to be phonk-like flashes: a hard cut, every other kick.
-            if (parity % 2 == 0 && sinceFlash >= FlashGap && lastAmount > 0.5f) {
+            // Only music that has proved to be phonk-like gets the impact frames. Every kick tears the
+            // picture a little, every other kick is also a hard coloured cut with a ring, and the
+            // returning kick after a breakdown (the drop) is the biggest hit of all.
+            val live = lastAmount > 0.5f
+            if (live) glitch = max(glitch, 0.4f)
+            if (parity % 2 == 0 && sinceFlash >= FlashGap && live) {
                 fire(false)
                 hit(0.6f, 0.45f)
+                glitch = max(glitch, 0.85f)
             }
             if (returning) {
                 drop = 1f; punch = 1.25f; lines = 1f
                 breakdown = 0f; quiet = 0f
                 fire(true)
                 hit(1f, 0.7f)
+                glitch = 1f; glitchLong = 1f
                 dropCount++
             }
         }
@@ -229,6 +249,9 @@ internal class TerminalCinema {
         out.split = (punch * a * g).coerceIn(0f, 1f)
         out.lineSeed = seed
         out.bpm = bpm
+        out.flashColor = if (flashTwice && flashAge >= FlashHold + FlashDip) flashRgb2 else flashRgb
+        // Flash Off / Soft also calm the glitch (it keeps half its strength), Bass response scales it.
+        out.glitch = (max(glitch, glitchLong) * (0.5f + 0.5f * flashScale.coerceIn(0f, 1f)) * min(1f, g)).coerceIn(0f, 1f)
         out.ring = if (ringAge < ringSpan) ringAge / ringSpan else -1f
         out.ringPower = ringPower * min(1f, g)
         lastAmount = amount
@@ -238,8 +261,11 @@ internal class TerminalCinema {
     private fun fire(twice: Boolean) {
         if (sinceFlash < minFlashGap) minFlashGap = sinceFlash
         flashAge = 0f
-        flashPeak = if (twice) 1f else FlashLevels[flashCycle % FlashLevels.size]
+        flashPeak = 1f
         flashTwice = twice
+        // ordinary cuts walk through the palette; a drop is white, then magenta or cyan
+        flashRgb = if (twice) 0xFFFFFF else FlashColors[flashCycle % FlashColors.size]
+        flashRgb2 = if (dropCount % 2 == 0) 0xFF2D95 else 0x19D3FF
         flashCycle++
         sinceFlash = 0f
         seed++
@@ -255,7 +281,7 @@ internal class TerminalCinema {
 
     /**
      * 1 while the flash is on, 0 otherwise, with no ramps: phonk edits cut between frames. A drop
-     * gets one white-black-white stutter; ordinary flashes are single, so the rate stays safe.
+     * gets one white-black-colour stutter; ordinary flashes are single, so the rate stays safe.
      */
     private fun flashPulse(t: Float, twice: Boolean): Float {
         if (t < FlashHold) return 1f
@@ -279,7 +305,7 @@ internal class TerminalCinema {
         const val FlashHold = 0.075f
         const val FlashDip = 0.04f
 
-        /** background level of successive flashes: white, white, light grey */
-        val FlashLevels = floatArrayOf(1f, 1f, 0.62f)
+        /** colours of successive flashes: mostly white, with hot magenta, cyan and red between */
+        val FlashColors = intArrayOf(0xFFFFFF, 0xFF2D95, 0xFFFFFF, 0x19D3FF, 0xFFFFFF, 0xFF3B30)
     }
 }

@@ -71,7 +71,7 @@ class TerminalCinemaTest {
             val f = s.fx.flash
             if (f > 0.01f) {
                 on = true
-                if (kotlin.math.abs(f - 1f) > 0.01f && kotlin.math.abs(f - 0.62f) > 0.01f) odd++
+                if (kotlin.math.abs(f - 1f) > 0.01f) odd++
             } else off = true
             if (s.fx.ring in 0f..1f) ring = true
         }
@@ -138,5 +138,32 @@ class TerminalCinemaTest {
             peak = maxOf(peak, soft.fx.flash)
         }
         assertTrue("soft flash peak=$peak", peak > 0.3f && peak <= 0.41f)
+    }
+
+    @Test fun flashesWalkThroughColoursNotJustWhiteAndGlitchTearsOnEveryKick() {
+        val s = Sim()
+        s.step(5f, 0.395f, 0.5f, 0.5f)
+        val colours = HashSet<Int>()
+        var glitchPeak = 0f
+        var glitchOnOddKick = false
+        repeat(600) {
+            s.step(0.0167f, 0.395f, 0.5f, 0.5f)
+            if (s.fx.flash > 0.01f) colours.add(s.fx.flashColor)
+            glitchPeak = maxOf(glitchPeak, s.fx.glitch)
+            if (s.fx.flash < 0.01f && s.fx.glitch > 0.2f) glitchOnOddKick = true
+        }
+        assertTrue("colours=$colours", colours.size >= 3 && colours.contains(0xFFFFFF))
+        assertTrue("glitch peak=$glitchPeak", glitchPeak > 0.8f)
+        assertTrue("glitch should also hit kicks that do not flash", glitchOnOddKick)
+        // never glitches without a proven phonk beat, and a drop is the heaviest hit
+        val calm = Sim()
+        calm.step(8f, 1.0f, 0.5f, 0.5f)
+        assertEquals(0f, calm.fx.glitch, 0.001f)
+        val big = Sim()
+        big.step(12f, 0.395f, 0.5f, 0.5f)
+        big.step(5f, 0f, 0.04f, 0.05f)
+        big.step(0.03f, 0.395f, 0.5f, 0.5f)
+        assertEquals(1f, big.fx.glitch, 0.01f)
+        assertEquals(0xFFFFFF, big.fx.flashColor)
     }
 }

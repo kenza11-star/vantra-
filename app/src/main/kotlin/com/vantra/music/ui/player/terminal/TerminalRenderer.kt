@@ -1,10 +1,16 @@
 package com.vantra.music.ui.player.terminal
 
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LightingColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Picture
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -67,6 +73,18 @@ internal class TerminalRenderer {
         textAlign = Paint.Align.CENTER
     }
     private var tintFilter: LightingColorFilter? = null
+    // Glitch frames: the scene is recorded once, then played back split into colour channels, in
+    // torn slices and in displaced blocks (see draw / drawGlitch).
+    private val glitchPicture = Picture()
+    private val channelPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD) }
+    private val barPaint = Paint()
+    private val scanPaint = Paint()
+    private var scanShader: BitmapShader? = null
+    private var lastGlitchNs = 0L
+    private var glitchCooldown = 0
+    private val redOnly = ColorMatrixColorFilter(floatArrayOf(1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+    private val greenOnly = ColorMatrixColorFilter(floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
+    private val blueOnly = ColorMatrixColorFilter(floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 0f, 1f, 0f))
     private var tintColor = -1
     private val glowShader = RadialGradient(0f, 0f, 1f,
         intArrayOf(0x38FF8A2A, 0x12FF6A1A, 0x00FF6A1A), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
@@ -193,6 +211,39 @@ internal class TerminalRenderer {
         typingSpeed: Float = 1f, typingEnabled: Boolean = false, codeCaret: TerminalCodeCaret? = null,
         fx: TerminalFx? = null,
     ) {
+        val glitch = fx?.glitch ?: 0f
+        val frameDt = if (lastGlitchNs == 0L) 0f else (timeNs - lastGlitchNs) / 1e9f
+        lastGlitchNs = timeNs
+        // a slow frame (under about 22 fps) rests the glitch for a moment, to spare weaker phones
+        if (frameDt > 0.045f && frameDt < 0.5f) glitchCooldown = 24
+        if (glitchCooldown > 0) glitchCooldown--
+        if (glitch < 0.04f || low || failed || width <= 0 || height <= 0 || glitchCooldown > 0) {
+            drawScene(canvas, doc, cursor, scroll, camera, timeNs, low, landscape, glowLevel, solidCursor,
+                activeMix, previousLine, generation, motionEnabled, typing, typingPositionMs, typingSpeed,
+                typingEnabled, codeCaret, fx)
+            return
+        }
+        val recording = glitchPicture.beginRecording(width, height)
+        try {
+            drawScene(recording, doc, cursor, scroll, camera, timeNs, low, landscape, glowLevel, solidCursor,
+                activeMix, previousLine, generation, motionEnabled, typing, typingPositionMs, typingSpeed,
+                typingEnabled, codeCaret, fx)
+        } finally {
+            glitchPicture.endRecording()
+        }
+        drawGlitch(canvas, glitchPicture, glitch, fx?.lineSeed ?: 0, timeNs)
+    }
+
+    private fun drawScene(
+        canvas: Canvas, doc: TerminalDocument, cursor: TerminalCursor, scroll: Float,
+        camera: TerminalCamera, timeNs: Long, low: Boolean, landscape: Boolean,
+        glowLevel: Float, solidCursor: Boolean,
+        activeMix: Float = 1f, previousLine: Int = Int.MIN_VALUE,
+        generation: Long = 0L, motionEnabled: Boolean = true,
+        typing: TerminalTypingTimeline? = null, typingPositionMs: Long = 0L,
+        typingSpeed: Float = 1f, typingEnabled: Boolean = false, codeCaret: TerminalCodeCaret? = null,
+        fx: TerminalFx? = null,
+    ) {
         if (failed) return
         typingTimeline = typing; typingTimeMs = typingPositionMs; typingRate = typingSpeed; typingOn = typingEnabled
         val save = canvas.save()
@@ -203,11 +254,16 @@ internal class TerminalRenderer {
             val fxLines = fx?.lines ?: 0f
             val fxSeed = fx?.lineSeed ?: 0
             val shotMix = max(fxClose, fxWall)
-            inv = fxFlash
             splitNow = fx?.split ?: 0f
             shotWall = fxWall
-            val gray = (fxFlash * 255f).toInt().coerceIn(0, 255)
-            val bgColor = android.graphics.Color.rgb(gray, gray, gray)
+            // The flash is a hard cut to white, magenta, cyan or red (black between): the ink and
+            // the fades follow the brightness of whatever the background is.
+            val flashRgb = fx?.flashColor ?: 0xFFFFFF
+            val bgR = (((flashRgb shr 16) and 0xFF) * fxFlash).toInt().coerceIn(0, 255)
+            val bgG = (((flashRgb shr 8) and 0xFF) * fxFlash).toInt().coerceIn(0, 255)
+            val bgB = ((flashRgb and 0xFF) * fxFlash).toInt().coerceIn(0, 255)
+            val bgColor = android.graphics.Color.rgb(bgR, bgG, bgB)
+            inv = (0.299f * bgR + 0.587f * bgG + 0.114f * bgB) / 255f
             // True black: on an AMOLED panel those pixels are off, and nothing tints the background.
             // Only the beat flash of phonk mode lifts it, briefly.
             canvas.drawColor(bgColor)
@@ -443,7 +499,7 @@ internal class TerminalRenderer {
             }
             // On every flash the word being typed is slammed across the screen, like the lyric
             // videos of phonk edits: it is only there for the length of the cut.
-            if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, punch, fxSeed)
+            if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, punch, fxSeed, fx?.glitch ?: 0f)
             val fxRing = fx?.ring ?: -1f
             if (fxRing >= 0f) drawRing(canvas, fxRing, fx?.ringPower ?: 0f)
 
@@ -603,8 +659,8 @@ internal class TerminalRenderer {
     /** Text colour for the beat flash: while the background lifts to white the ink goes to black. */
     private fun ink(rgb: Int, alpha: Float): Int {
         if (inv <= 0.01f) return color(rgb, alpha)
-        // dim (soft) flashes keep their light ink; bright ones, white or light grey, go to black ink
-        val k = 1f - ((inv - 0.40f) / 0.15f).coerceIn(0f, 1f)
+        // dark backgrounds (soft flashes, magenta, red) keep light ink; bright ones (white, cyan) go to black ink
+        val k = 1f - ((inv - 0.46f) / 0.10f).coerceIn(0f, 1f)
         val r = (((rgb shr 16) and 0xFF) * k).toInt()
         val g = (((rgb shr 8) and 0xFF) * k).toInt()
         val b = ((rgb and 0xFF) * k).toInt()
@@ -677,7 +733,7 @@ internal class TerminalRenderer {
     }
 
     /** The last word typed on the active line, as big as the screen allows, tilted a little. */
-    private fun drawSlam(canvas: Canvas, doc: TerminalDocument, punch: Float, seed: Int) {
+    private fun drawSlam(canvas: Canvas, doc: TerminalDocument, punch: Float, seed: Int, glitch: Float) {
         if (!ctValid) return
         val row = doc.rows.getOrNull(ctRow) ?: return
         val from = row.lyricFrom
@@ -698,12 +754,107 @@ internal class TerminalRenderer {
         val wide = slam.measureText(word)
         val room = width * 0.88f
         if (wide > room) slam.textSize = slam.textSize * room / wide
+        val cx = width / 2f
+        val cy = height / 2f + slam.textSize * 0.33f
+        // top and bottom halves slide apart while the picture glitches, and the colours split
+        val tear = if (glitch > 0.3f) slam.textSize * 0.05f * glitch * (if (seed % 2 == 0) 1f else -1f) else 0f
+        val off = slam.textSize * 0.03f * (0.4f + glitch)
         val tone = if (inv > 0.5f) 0 else 255
-        slam.color = android.graphics.Color.argb(255, tone, tone, tone)
         canvas.save()
         canvas.rotate(if (seed % 2 == 0) -4f else 3f, width / 2f, height / 2f)
-        canvas.drawText(word, width / 2f, height / 2f + slam.textSize * 0.33f, slam)
+        slam.color = android.graphics.Color.argb(230, 255, 45, 85)
+        slamPass(canvas, word, cx - off, cy, tear)
+        slam.color = android.graphics.Color.argb(230, 25, 211, 255)
+        slamPass(canvas, word, cx + off, cy, tear)
+        slam.color = android.graphics.Color.argb(255, tone, tone, tone)
+        slamPass(canvas, word, cx, cy, tear)
         canvas.restore()
+    }
+
+    private fun slamPass(canvas: Canvas, word: String, x: Float, y: Float, tear: Float) {
+        val mid = height / 2f
+        canvas.save()
+        canvas.clipRect(0f, 0f, width.toFloat(), mid)
+        canvas.drawText(word, x + tear, y, slam)
+        canvas.restore()
+        canvas.save()
+        canvas.clipRect(0f, mid, width.toFloat(), height.toFloat())
+        canvas.drawText(word, x - tear, y, slam)
+        canvas.restore()
+    }
+
+    /**
+     * The glitched picture: the recorded scene played back as separate red, green and blue copies a
+     * few pixels apart (chromatic aberration), then torn into horizontal slices that slide sideways,
+     * a few displaced blocks, thin bars of cyan, magenta and white, and scanlines on top. Every frame
+     * has its own pattern, so it flickers like a damaged signal.
+     */
+    private fun drawGlitch(canvas: Canvas, picture: Picture, glitch: Float, seed: Int, timeNs: Long) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val amp = glitch.coerceIn(0f, 1f)
+        val frame = (timeNs / 16_000_000L).toInt() * 31 + seed * 17
+        // 1. chromatic aberration of the whole picture
+        val split = density * (2f + 9f * amp) * (if (hash01(frame) > 0.5f) 1f else -1f)
+        canvas.drawColor(android.graphics.Color.BLACK)
+        for (channel in 0..2) {
+            channelPaint.colorFilter = when (channel) { 0 -> redOnly; 1 -> greenOnly; else -> blueOnly }
+            canvas.saveLayer(0f, 0f, w, h, channelPaint)
+            canvas.translate((channel - 1) * split, 0f)
+            canvas.drawPicture(picture)
+            canvas.restore()
+        }
+        // 2. torn slices that slide sideways
+        val slices = 3 + (amp * 6f).toInt()
+        for (i in 0 until slices) {
+            val sliceH = h * (0.015f + 0.07f * hash01(frame * 29 + i * 11 + 3))
+            val y = hash01(frame * 13 + i * 7) * (h - sliceH)
+            val dx = (hash01(frame * 5 + i * 3 + 9) - 0.5f) * 2f * density * (14f + 70f * amp)
+            canvas.save()
+            canvas.clipRect(0f, y, w, y + sliceH)
+            canvas.translate(dx, 0f)
+            canvas.drawPicture(picture)
+            canvas.restore()
+        }
+        // 3. a couple of displaced blocks
+        for (i in 0 until 2) {
+            val bw = w * (0.08f + 0.20f * hash01(frame * 3 + i * 19 + 5))
+            val bh = h * (0.02f + 0.06f * hash01(frame * 7 + i * 23 + 1))
+            val x = hash01(frame * 11 + i * 13 + 2) * (w - bw)
+            val y = hash01(frame * 17 + i * 5 + 4) * (h - bh)
+            val dx = (hash01(frame * 19 + i * 3 + 6) - 0.5f) * 2f * density * 90f * amp
+            val dy = (hash01(frame * 23 + i * 7 + 8) - 0.5f) * 2f * density * 30f * amp
+            canvas.save()
+            canvas.clipRect(x, y, x + bw, y + bh)
+            canvas.translate(dx, dy)
+            canvas.drawPicture(picture)
+            canvas.restore()
+        }
+        // 4. thin bars of colour
+        val bars = 1 + (amp * 3f).toInt()
+        for (i in 0 until bars) {
+            val y = hash01(frame * 17 + i * 5 + 1) * h
+            val barH = density * (1.5f + 9f * hash01(frame * 23 + i * 9 + 2))
+            val c = GlitchColors[(frame + i) and 3]
+            barPaint.color = (c and 0xFFFFFF) or (((0.55f + 0.35f * amp) * 255f).toInt() shl 24)
+            canvas.drawRect(0f, y, w, y + barH, barPaint)
+        }
+        // 5. scanlines
+        scanPaint.shader = scanlines()
+        scanPaint.alpha = (amp * 0.55f * 255f).toInt().coerceIn(0, 255)
+        canvas.drawRect(0f, 0f, w, h, scanPaint)
+    }
+
+    private fun scanlines(): Shader {
+        scanShader?.let { return it }
+        val tile = Bitmap.createBitmap(1, 4, Bitmap.Config.ARGB_8888)
+        tile.setPixel(0, 2, 0x99000000.toInt())
+        val shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        val m = Matrix()
+        m.setScale(1f, max(1f, density * 0.9f))
+        shader.setLocalMatrix(m)
+        scanShader = shader
+        return shader
     }
 
     /** Colour filter that turns the black fades into the colour of the flash. */
@@ -751,5 +902,6 @@ internal class TerminalRenderer {
     private companion object {
         const val BlinkPeriodNs = 1_060_000_000L
         const val RayCount = 28
+        val GlitchColors = intArrayOf(0x19D3FF, 0xFF2D95, 0xFFFFFF, 0xFFE14D)
     }
 }

@@ -136,3 +136,32 @@ Lainnya:
 
 Masih belum: CD cover + waveform di pojok (perlu bitmap artwork di renderer), motion blur
 horizontal, auto-turun efek saat FPS drop (performa belum diukur di HP kelas bawah).
+
+## Update 6: impact frame glitch + warna flash (bukan hanya putih-hitam)
+Berlaku hanya untuk musik yang terkunci sebagai phonk/montagem.
+
+**Warna flash** (potong keras, tanpa fade): putih, magenta `#FF2D95`, putih, cyan `#19D3FF`,
+putih, merah `#FF3B30`, berulang. Teks otomatis hitam di latar terang (putih, cyan) dan tetap
+terang di latar gelap (magenta, merah). Drop = putih -> hitam -> magenta/cyan (sekali).
+
+**Glitch seluruh layar** (`TerminalRenderer.drawGlitch`): scene direkam ke `Picture` lalu diputar ulang
+- **aberasi kromatik**: tiga salinan kanal R, G, B bergeser (blending ADD),
+- **irisan layar robek** yang bergeser ke samping (3-9 irisan, makin banyak makin kuat),
+- **balok datamosh** yang berpindah posisi,
+- **garis tipis cyan/magenta/putih/kuning**,
+- **scanline** di atasnya,
+- polanya baru tiap frame (berkedip seperti sinyal rusak).
+Kata raksasa juga ikut: kanal merah/cyan terpisah dan separuh atas/bawah saling bergeser.
+
+**Berlapis per kick**: tiap kick = robekan kecil (0,4); tiap kick ke-2 = flash berwarna + ring +
+glitch besar (0,85); drop = glitch penuh (1,0) yang meredup lebih lama.
+
+**Pengaman**: otomatis berhenti ±0,4 dtk jika ada frame lambat (<22 fps); tidak berjalan di
+kualitas Low; mati bila Reduced Motion / Intensity Off. Beat flash Off/Soft menyisakan setengah
+kekuatan glitch; "Bass response" menskalakannya.
+
+Test baru: `flashesWalkThroughColours...` (>=3 warna, glitch di kick yang tidak flash, tidak ada
+glitch tanpa beat phonk, drop = glitch 1,0 dan flash putih).
+
+Catatan: `Picture` + `saveLayer` dipakai pada API 24+; belum diuji di perangkat. Jika terasa berat
+di HP tertentu, set kualitas ke Low atau Beat flash Off.
