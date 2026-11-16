@@ -3,6 +3,7 @@ package com.vantra.music.ui.player.terminal
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.min
 
 /** Everything the renderer needs for one frame of the cinematic look and the beat-driven (phonk) mode. */
 internal class TerminalFx {
@@ -19,15 +20,22 @@ internal class TerminalFx {
     var phonk = 0f
     var punch = 0f
     var tilt = 0f
+
+    /** background level of the beat flash: a hard cut, 0 = black, 1 = white */
     var flash = 0f
     var lines = 0f
     var split = 0f
     var lineSeed = 0
     var bpm = 0f
 
+    /** progress 0..1 of the shockwave ring of the last hit, -1 when there is none */
+    var ring = -1f
+    var ringPower = 0f
+
     fun clear() {
         close = 0f; wall = 0f; orb = 0f; phonk = 0f
         punch = 0f; tilt = 0f; flash = 0f; lines = 0f; split = 0f; bpm = 0f
+        ring = -1f; ringPower = 0f
     }
 }
 
@@ -56,7 +64,14 @@ internal class TerminalCinema {
     private var parity = 0
     private var tiltSign = 1f
     private var punch = 0f
-    private var flash = 0f
+    private var flashAge = 99f
+    private var flashPeak = 1f
+    private var flashTwice = false
+    private var flashCycle = 0
+    private var ringAge = 99f
+    private var ringSpan = 0.45f
+    private var ringPower = 0f
+    private var lastAmount = 0f
     private var lines = 0f
     private var drop = 0f
     private var seed = 0
@@ -74,13 +89,18 @@ internal class TerminalCinema {
     var dropCount = 0
         private set
 
+    /** shortest time between two flash triggers so far (seconds), for tests */
+    var minFlashGap = 99f
+        private set
+
     /** a seek, a new song, motion switched off: forget the beat history */
     fun reset() {
         gapCount = 0; gapHead = 0
         sinceKick = 10f; sinceFlash = 10f
         bassAvg = 0f; score = 0f; quiet = 0f; breakdown = 0f
         parity = 0
-        punch = 0f; flash = 0f; lines = 0f; drop = 0f
+        punch = 0f; lines = 0f; drop = 0f
+        flashAge = 99f; ringAge = 99f; lastAmount = 0f
         bpm = 0f
     }
 
@@ -102,11 +122,14 @@ internal class TerminalCinema {
      * @param typing whether the typing animation is on (the close-up follows the caret)
      * @param idle no lyric is active (intro, instrumental, outro)
      * @param gain the user's bass response, scales the strength of the beat effects
+     * @param shots false keeps the plain editor view: no close-up and no wall shot
+     * @param flashScale brightness of the beat flash: 0 off, below 1 soft, 1 full
      */
     fun update(
         dt: Float, kick: Float, bass: Float, bassDrive: Float, energy: Float,
         audio: Boolean, motion: Boolean, typing: Boolean, idle: Boolean, hasLyrics: Boolean,
         climax: Float, jump: Boolean, gain: Float, out: TerminalFx,
+        shots: Boolean = true, flashScale: Float = 1f,
     ) {
         val h = dt.coerceIn(0.001f, 0.1f)
         if (!motion) {
@@ -118,7 +141,8 @@ internal class TerminalCinema {
         sinceFlash += h
         bassAvg += ((if (audio) bass else 0f) - bassAvg) * smooth(h, 2f)
         punch *= exp(-h / 0.15f)
-        flash *= exp(-h / 0.09f)
+        flashAge += h
+        ringAge += h
         lines *= exp(-h / 0.20f)
         drop *= exp(-h / 0.45f)
 
@@ -136,17 +160,16 @@ internal class TerminalCinema {
             tiltSign = -tiltSign
             parity++
             lines = max(lines, 0.3f + 0.5f * strength)
-            if (parity % 2 == 0 && sinceFlash >= FlashGap) {
-                flash = max(flash, 0.5f + 0.4f * strength)
-                sinceFlash = 0f
-                seed++
-                flashCount++
+            // Only music that has proved to be phonk-like flashes: a hard cut, every other kick.
+            if (parity % 2 == 0 && sinceFlash >= FlashGap && lastAmount > 0.5f) {
+                fire(false)
+                hit(0.6f, 0.45f)
             }
             if (returning) {
-                drop = 1f; flash = 1f; punch = 1.25f; lines = 1f
+                drop = 1f; punch = 1.25f; lines = 1f
                 breakdown = 0f; quiet = 0f
-                sinceFlash = 0f
-                seed++
+                fire(true)
+                hit(1f, 0.7f)
                 dropCount++
             }
         }
@@ -169,7 +192,7 @@ internal class TerminalCinema {
         }
         bpm = if (median > 0f) 60f / median else 0f
 
-        val sure = gapCount >= 6 && steady >= 0.65f && median >= 0.30f && median <= 0.70f && bassAvg > 0.2f
+        val sure = gapCount >= 5 && steady >= 0.65f && median >= 0.30f && median <= 0.70f && bassAvg > 0.2f
         val target = if (sure && sinceKick < HoldKick) 1f else 0f
         // quick to believe, slow to let go: a breakdown must not switch the mode off
         val tau = if (target > score) 1.0f else if (sinceKick > HoldKick) 9f else 2.5f
@@ -182,14 +205,14 @@ internal class TerminalCinema {
 
         // the shot
         val wallTarget = when {
-            !hasLyrics -> 0f
+            !hasLyrics || !shots -> 0f
             idle -> 1f
             else -> max(climax.coerceIn(0f, 1f), breakdown * 0.85f)
         }
-        val closeTarget = if (hasLyrics && typing) 1f else 0f
+        val closeTarget = if (hasLyrics && typing && shots) 1f else 0f
         closeSpring.step(h, closeTarget, 30f, 11f)
         wallSpring.step(h, wallTarget, 14f, 8f)
-        orbSpring.step(h, wallTarget * (0.55f + 0.45f * energy.coerceIn(0f, 1f)), 10f, 6f)
+        orbSpring.step(h, wallTarget * (0.35f + 0.25f * energy.coerceIn(0f, 1f)), 10f, 6f)
         val wall = wallSpring.value.coerceIn(0f, 1f)
         out.wall = wall
         out.close = (closeSpring.value.coerceIn(0f, 1f) * (1f - wall)).coerceIn(0f, 1f)
@@ -201,11 +224,45 @@ internal class TerminalCinema {
         out.phonk = amount
         out.punch = (punch * a * g).coerceIn(0f, 1.3f)
         out.tilt = tiltSign * punch * 0.028f * a * g
-        out.flash = (flash * a * g).coerceIn(0f, 1f)
+        out.flash = (flashPulse(flashAge, flashTwice) * flashPeak * min(1f, g) * flashScale.coerceIn(0f, 1f)).coerceIn(0f, 1f)
         out.lines = (max(lines, drop) * a * g).coerceIn(0f, 1f)
         out.split = (punch * a * g).coerceIn(0f, 1f)
         out.lineSeed = seed
         out.bpm = bpm
+        out.ring = if (ringAge < ringSpan) ringAge / ringSpan else -1f
+        out.ringPower = ringPower * min(1f, g)
+        lastAmount = amount
+    }
+
+    /** One flash: a hard cut to white (or light grey every third time), not a fade. */
+    private fun fire(twice: Boolean) {
+        if (sinceFlash < minFlashGap) minFlashGap = sinceFlash
+        flashAge = 0f
+        flashPeak = if (twice) 1f else FlashLevels[flashCycle % FlashLevels.size]
+        flashTwice = twice
+        flashCycle++
+        sinceFlash = 0f
+        seed++
+        flashCount++
+    }
+
+    /** The shockwave ring that leaves the centre with a hit. */
+    private fun hit(power: Float, seconds: Float) {
+        ringAge = 0f
+        ringPower = power
+        ringSpan = seconds
+    }
+
+    /**
+     * 1 while the flash is on, 0 otherwise, with no ramps: phonk edits cut between frames. A drop
+     * gets one white-black-white stutter; ordinary flashes are single, so the rate stays safe.
+     */
+    private fun flashPulse(t: Float, twice: Boolean): Float {
+        if (t < FlashHold) return 1f
+        if (!twice) return 0f
+        if (t < FlashHold + FlashDip) return 0f
+        if (t < 2f * FlashHold + FlashDip) return 1f
+        return 0f
     }
 
     private companion object {
@@ -218,6 +275,11 @@ internal class TerminalCinema {
         const val HoldKick = 1.2f
 
         /** flashes never come faster than this, for photosensitive viewers */
-        const val FlashGap = 0.38f
+        const val FlashGap = 0.40f
+        const val FlashHold = 0.075f
+        const val FlashDip = 0.04f
+
+        /** background level of successive flashes: white, white, light grey */
+        val FlashLevels = floatArrayOf(1f, 1f, 0.62f)
     }
 }

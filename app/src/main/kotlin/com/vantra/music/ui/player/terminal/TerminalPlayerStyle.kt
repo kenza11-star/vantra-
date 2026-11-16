@@ -86,6 +86,12 @@ import com.vantra.music.constants.TerminalTypingSpeedKey
 import com.vantra.music.constants.TerminalBassResponse
 import com.vantra.music.constants.TerminalBassResponseKey
 import com.vantra.music.constants.TerminalEmotionalZoom
+import com.vantra.music.constants.TerminalBeatSync
+import com.vantra.music.constants.TerminalBeatSyncKey
+import com.vantra.music.constants.TerminalFlashMode
+import com.vantra.music.constants.TerminalFlashModeKey
+import com.vantra.music.constants.TerminalShotMode
+import com.vantra.music.constants.TerminalShotModeKey
 import com.vantra.music.constants.TerminalEmotionalZoomKey
 import com.vantra.music.constants.TerminalEmphasisMarkersKey
 import com.vantra.music.constants.TerminalTypingKey
@@ -290,6 +296,9 @@ private fun TerminalScene(
     val typingSpeed by rememberEnumPreference(TerminalTypingSpeedKey, TerminalTypingSpeed.NORMAL)
     val bassResponse by rememberEnumPreference(TerminalBassResponseKey, TerminalBassResponse.NORMAL)
     val emotionalZoom by rememberEnumPreference(TerminalEmotionalZoomKey, TerminalEmotionalZoom.NORMAL)
+    val shotMode by rememberEnumPreference(TerminalShotModeKey, TerminalShotMode.CINEMATIC)
+    val flashMode by rememberEnumPreference(TerminalFlashModeKey, TerminalFlashMode.FULL)
+    val beatSync by rememberEnumPreference(TerminalBeatSyncKey, TerminalBeatSync.EXACT)
     val rawMarkers by com.vantra.music.utils.rememberPreference(TerminalEmphasisMarkersKey, defaultValue="{}")
     val markers = remember(rawMarkers,trackMediaId) {
         TerminalEmphasis.parse(TerminalMarkerPreferences.text(rawMarkers,trackMediaId)).markers
@@ -302,8 +311,11 @@ private fun TerminalScene(
     val cols = remember(size, landscape, density.density, density.fontScale) {
         renderer.layout(size.width, size.height, landscape, density.density, density.fontScale)
     }
-    val doc = remember(lines, track.title, track.artist, cols, size.width, density.density, density.fontScale) {
-        buildDocument(lines, track, cols, renderer::measureColumns)
+    // With typing on, the close-up shows one lyric as one long row that the camera follows,
+    // so lyrics wrap much later than the page width.
+    val docCols = if (typingPref) maxOf(cols, 64) else cols
+    val doc = remember(lines, track.title, track.artist, docCols, size.width, density.density, density.fontScale) {
+        buildDocument(lines, track, docCols, renderer::measureColumns)
     }
     val docNow by rememberUpdatedState(doc)
     val typingTimeline = remember(doc) { TerminalTypingTimeline(doc) }
@@ -315,7 +327,8 @@ private fun TerminalScene(
     val missingDocNow by rememberUpdatedState(missingDoc)
     val missingTyping = remember(missingDoc) { TerminalTypingTimeline(missingDoc) }
     val missingTypingNow by rememberUpdatedState(missingTyping)
-    val settingsNow by rememberUpdatedState(TerminalFrameSettings(intensity.scale, quality, beatPref, typingPref, typingSpeed.scale, bassResponse.scale, emotionalZoom.scale))
+    val settingsNow by rememberUpdatedState(TerminalFrameSettings(intensity.scale, quality, beatPref, typingPref, typingSpeed.scale, bassResponse.scale, emotionalZoom.scale,
+        shotMode == TerminalShotMode.CINEMATIC, flashMode.scale, beatSync.leadMs))
     val showing = rememberStyleShowing()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
@@ -419,7 +432,11 @@ private fun TerminalScene(
                                 // Cast is remote: its reported clock drives fallback lyrics, never local FFT data.
                                 val enabled = prefs.beat && !motionOff && prefs.bassGain > 0f
                                 val spectrum = if (enabled && playing && !casting) conn.service.spectrumOf(player) else null
-                                val heard = spectrum?.read(posMs, s.sync.tracker.bands) == true
+                                // Beat sync: look a little ahead of (or behind) the playback position; if the
+                                // audio there isn't available yet, read at the position itself.
+                                val heard = spectrum != null &&
+                                    ((prefs.beatLeadMs != 0L && spectrum.read(posMs + prefs.beatLeadMs, s.sync.tracker.bands)) ||
+                                        spectrum.read(posMs, s.sync.tracker.bands))
                                 val activeDoc = if (lyricsIdNow != null && lyricsIdNow == mediaId) docNow else missingDocNow
                                 val docChanged = s.document !== activeDoc
                                 s.sync.react(stepDt, playing, enabled, !activeDoc.isEmpty, heard)
@@ -480,12 +497,13 @@ private fun TerminalScene(
                                     audio = audio, motion = !motionOff, typing = s.typingEnabled,
                                     idle = s.cursor.idle, hasLyrics = !activeDoc.isEmpty,
                                     climax = s.emphasis.climax, jump = s.sync.timelineJump,
-                                    gain = prefs.bassGain, out = s.fx)
+                                    gain = prefs.bassGain, out = s.fx,
+                                    shots = prefs.cinematic, flashScale = prefs.flashScale)
                                 val wallNow = s.fx.wall
-                                s.camera.shotPitch.step(stepDt, -0.50f * wallNow, 14f, 8f)
-                                s.camera.shotYaw.step(stepDt, 0.18f * wallNow, 14f, 8f)
-                                s.camera.shotRoll.step(stepDt, -0.07f * wallNow, 14f, 8f)
-                                s.camera.shotDolly.step(stepDt, -0.10f * wallNow, 14f, 8f)
+                                s.camera.shotPitch.step(stepDt, -0.34f * wallNow, 14f, 8f)
+                                s.camera.shotYaw.step(stepDt, 0.10f * wallNow, 14f, 8f)
+                                s.camera.shotRoll.step(stepDt, -0.04f * wallNow, 14f, 8f)
+                                s.camera.shotDolly.step(stepDt, -0.04f * wallNow, 14f, 8f)
                                 val glowTarget = if (audio) s.sync.tracker.bass else 0.1f
                                 s.glow += (glowTarget - s.glow) * (1f - kotlin.math.exp(-stepDt / 0.18f))
                                 s.solidCursor = playing && s.typingEnabled && s.codeCaret.active
@@ -550,7 +568,8 @@ private fun TerminalScene(
 }
 
 private data class TerminalFrameSettings(val intensity: Float, val quality: TerminalQuality,
-    val beat: Boolean, val typing: Boolean, val typingSpeed: Float, val bassGain: Float, val zoomGain: Float)
+    val beat: Boolean, val typing: Boolean, val typingSpeed: Float, val bassGain: Float, val zoomGain: Float,
+    val cinematic: Boolean, val flashScale: Float, val beatLeadMs: Long)
 
 private const val BlinkPollMs = 265L
 

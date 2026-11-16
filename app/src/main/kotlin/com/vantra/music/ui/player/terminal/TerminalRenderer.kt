@@ -1,6 +1,7 @@
 package com.vantra.music.ui.player.terminal
 
 import android.graphics.Canvas
+import android.graphics.LightingColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -57,8 +58,18 @@ internal class TerminalRenderer {
     private val orbCore = Paint(Paint.ANTI_ALIAS_FLAG)
     private val streak = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rays = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val invPage = Matrix()
+    private val fadeSide = Paint()
+    private val fadeSideShader = LinearGradient(0f, 0f, 1f, 0f, 0x00000000, 0xFF000000.toInt(), Shader.TileMode.CLAMP)
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val slam = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.SANS_SERIF, android.graphics.Typeface.BOLD)
+        textAlign = Paint.Align.CENTER
+    }
+    private var tintFilter: LightingColorFilter? = null
+    private var tintColor = -1
     private val glowShader = RadialGradient(0f, 0f, 1f,
-        intArrayOf(0x66FF8A2A, 0x22FF6A1A, 0x00FF6A1A), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        intArrayOf(0x38FF8A2A, 0x12FF6A1A, 0x00FF6A1A), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
     private val coreShader = RadialGradient(0f, 0f, 1f,
         intArrayOf(0xFFFFF4D0.toInt(), 0xFFFFC04D.toInt(), 0xFFFF9A2E.toInt(), 0x00FF8A2A),
         floatArrayOf(0f, 0.42f, 0.72f, 1f), Shader.TileMode.CLAMP)
@@ -69,6 +80,7 @@ internal class TerminalRenderer {
         orbGlow.shader = glowShader
         orbCore.shader = coreShader
         streak.shader = streakShader
+        fadeSide.shader = fadeSideShader
     }
     private val matrix = Matrix()
     private val src = FloatArray(8)
@@ -188,6 +200,8 @@ internal class TerminalRenderer {
             val fxClose = fx?.close ?: 0f
             val fxWall = fx?.wall ?: 0f
             val fxFlash = fx?.flash ?: 0f
+            val fxLines = fx?.lines ?: 0f
+            val fxSeed = fx?.lineSeed ?: 0
             val shotMix = max(fxClose, fxWall)
             inv = fxFlash
             splitNow = fx?.split ?: 0f
@@ -201,8 +215,15 @@ internal class TerminalRenderer {
             val punch = fx?.punch ?: 0f
             val tilt = fx?.tilt ?: 0f
             if (punch > 0.005f || tilt != 0f) {
-                canvas.scale(1f + 0.07f * punch, 1f + 0.07f * punch, width / 2f, height / 2f)
+                canvas.scale(1f + 0.09f * punch, 1f + 0.09f * punch, width / 2f, height / 2f)
                 canvas.rotate(Math.toDegrees(tilt.toDouble()).toFloat(), width / 2f, height / 2f)
+            }
+            // A hit also shakes the picture a little, a new offset every frame.
+            if (punch > 0.02f) {
+                val frame = (timeNs / 16_000_000L).toInt()
+                val sx = (hash01(frame * 2 + fxSeed) - 0.5f) * 2f * 5f * density * punch
+                val sy = (hash01(frame * 2 + 1 + fxSeed * 7) - 0.5f) * 2f * 5f * density * punch
+                canvas.translate(sx, sy)
             }
             val resetMotion = generation != motionGeneration
             motionGeneration = generation
@@ -251,6 +272,8 @@ internal class TerminalRenderer {
                 if (!low) drawDepthPlane(canvas, doc, scroll, 0.95f, -0.66f, 0.17f * planeFade)
                 drawDepthPlane(canvas, doc, scroll, 0.45f, 0.66f, 0.23f * planeFade)
             }
+            // Speed lines sit behind the words: once in the margins, once on the card.
+            if (fxLines > 0.02f) drawSpeedLines(canvas, fxLines, fxSeed)
             val pageSave = canvas.save()
             canvas.concat(matrix)
             // A lyric can lie outside the old local page while scrolling catches up. The
@@ -267,14 +290,27 @@ internal class TerminalRenderer {
             canvas.drawRoundRect(0f, pageTop, pageWidth, pageBottom, radius, radius, card)
             guide.color = color(0xFFFFFF, 0.07f * (1f - fxClose))
             canvas.drawLine(gutter, 0f, gutter, height.toFloat(), guide)
+            if (fxLines > 0.02f && matrix.invert(invPage)) {
+                canvas.save()
+                canvas.concat(invPage)
+                drawSpeedLines(canvas, fxLines, fxSeed)
+                canvas.restore()
+            }
             // Close-up: zoom about the active row and follow the caret along the line, like a
             // camera operator would. Everything below is blended from the plain view by fxClose.
-            resolveCaret(doc, cursor, codeCaret, textLeft)
+            resolveCaret(doc, cursor, codeCaret, textLeft, fxClose > 0.3f)
             val cols = if (landscape) 26f else 15f
             val closeZoom = ((pageWidth * 0.92f) / (lyricCharW * cols)).coerceIn(1.25f, 3.2f)
             val zoom = 1f + (closeZoom - 1f) * fxClose
             val anchorY = focusY + rowHeight * 0.5f
             val zoomSave = canvas.save()
+            if (fxWall > 0.002f) {
+                // The wall shot is a little closer than the plain page so its rows can be read.
+                val wallZoom = 1f + 0.3f * fxWall
+                canvas.translate(pageWidth / 2f, anchorY)
+                canvas.scale(wallZoom, wallZoom)
+                canvas.translate(-pageWidth / 2f, -anchorY)
+            }
             if (fxClose > 0.002f) {
                 val minLeft = textLeft - 6f * density
                 val wanted = max(minLeft, (if (ctValid) ctX else minLeft) - pageWidth / zoom * 0.5f)
@@ -297,7 +333,7 @@ internal class TerminalRenderer {
                 val previous = row.line == previousLine && previousLine >= 0
                 if (activeLyric || (previous && row.kind == KindLyric)) {
                     val emphasis = if (activeLyric) mix else 1f - mix
-                    band.alpha = ((0.8f + 0.2f * (if (low) 0f else glowLevel.coerceIn(0f, 1f))) * emphasis * (1f - 0.7f * fxClose) * 255f)
+                    band.alpha = ((0.8f + 0.2f * (if (low) 0f else glowLevel.coerceIn(0f, 1f))) * emphasis * (1f - fxClose) * 255f)
                         .toInt().coerceIn(0, 255)
                     canvas.drawRect(gutter + density, top, pageWidth * 3f, top + rowHeight, band)
                     fill.color = color(TerminalPalette.Cursor, emphasis * (1f - fxClose))
@@ -320,7 +356,7 @@ internal class TerminalRenderer {
                 // The key going down right now: its letter fades in just below the baseline.
                 val strike = codeCaret?.takeIf { typingOn && it.active && r == it.row && it.next > revealed && it.frac < 1f }
                 drawRow(canvas, row, textLeft, top + baseline, edge, activeLyric, active, neighbor, mix, previous, revealed,
-                    strike?.next ?: 0, strike?.let { easeOut(it.frac) } ?: 1f, !low)
+                    strike?.next ?: 0, strike?.let { easeOut(it.frac) } ?: 1f, !low, 1f + 0.9f * fxWall)
                 // A faint mirror image under the line being typed, like glass under the text.
                 if (activeLyric && fxClose > 0.3f && !low && revealed > 0) {
                     val axis = top + rowHeight
@@ -358,11 +394,27 @@ internal class TerminalRenderer {
             }
             canvas.restoreToCount(zoomSave)
 
-            // Rows dissolve into the black at the top and bottom of the card instead of being cut off.
-            fadeTop.alpha = ((1f - inv) * 255f).toInt().coerceIn(0, 255)
-            fadeBottom.alpha = fadeTop.alpha
+            // Rows dissolve into the background at the edges of the card instead of being cut off:
+            // top and bottom, and left and right where long lines run off. During a flash the
+            // fades take the colour of the flash.
+            val tint = tintFor(bgColor)
+            fadeTop.colorFilter = tint
+            fadeBottom.colorFilter = tint
+            fadeSide.colorFilter = tint
             canvas.drawRect(0f, pageTop, pageWidth, fadeHeight, fadeTop)
             canvas.drawRect(0f, height - fadeHeight, pageWidth, pageBottom, fadeBottom)
+            val sideW = pageWidth * 0.08f
+            val rightEdge = pageWidth + ext
+            fxMatrix.setScale(sideW, 1f)
+            fxMatrix.postTranslate(rightEdge - sideW, 0f)
+            fadeSideShader.setLocalMatrix(fxMatrix)
+            canvas.drawRect(rightEdge - sideW, pageTop, rightEdge, pageBottom, fadeSide)
+            if (fxClose > 0.3f) {
+                fxMatrix.setScale(-sideW, 1f)
+                fxMatrix.postTranslate(-ext + sideW, 0f)
+                fadeSideShader.setLocalMatrix(fxMatrix)
+                canvas.drawRect(-ext, pageTop, -ext + sideW, pageBottom, fadeSide)
+            }
             // Hairline edge, then a quiet window title: three dots and a file name. Both give way
             // to the full-bleed cinematic shots.
             val chrome = (1f - shotMix) * (1f - inv)
@@ -380,8 +432,8 @@ internal class TerminalRenderer {
             }
             canvas.restoreToCount(pageSave)
 
-            // Screen-space light and motion: the warm orb that comes with the wall shot, and the
-            // speed lines of a phonk hit. Both sit on top of the picture.
+            // Screen-space light and motion on top of the picture: the warm orb of the wall shot
+            // and the shockwave ring of a phonk hit.
             val fxOrb = fx?.orb ?: 0f
             if (fxOrb > 0.02f) {
                 fxPoint[0] = pageWidth * 0.42f
@@ -389,8 +441,11 @@ internal class TerminalRenderer {
                 matrix.mapPoints(fxPoint)
                 drawOrb(canvas, fxOrb, fxPoint[0], fxPoint[1])
             }
-            val fxLines = fx?.lines ?: 0f
-            if (fxLines > 0.02f) drawSpeedLines(canvas, fxLines, fx?.lineSeed ?: 0)
+            // On every flash the word being typed is slammed across the screen, like the lyric
+            // videos of phonk edits: it is only there for the length of the cut.
+            if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, punch, fxSeed)
+            val fxRing = fx?.ring ?: -1f
+            if (fxRing >= 0f) drawRing(canvas, fxRing, fx?.ringPower ?: 0f)
 
         } catch (error: RuntimeException) {
             android.util.Log.e("VantraTerminal", "Editor rendering failed", error)
@@ -548,7 +603,8 @@ internal class TerminalRenderer {
     /** Text colour for the beat flash: while the background lifts to white the ink goes to black. */
     private fun ink(rgb: Int, alpha: Float): Int {
         if (inv <= 0.01f) return color(rgb, alpha)
-        val k = 1f - inv
+        // dim (soft) flashes keep their light ink; bright ones, white or light grey, go to black ink
+        val k = 1f - ((inv - 0.40f) / 0.15f).coerceIn(0f, 1f)
         val r = (((rgb shr 16) and 0xFF) * k).toInt()
         val g = (((rgb shr 8) and 0xFF) * k).toInt()
         val b = ((rgb and 0xFF) * k).toInt()
@@ -587,32 +643,87 @@ internal class TerminalRenderer {
     /** The warm orb of the wall shot: a wide glow, the bright core and a thin horizontal streak. */
     private fun drawOrb(canvas: Canvas, orb: Float, px: Float, py: Float) {
         val m = min(width, height).toFloat()
-        val glowR = m * 1.05f
-        val glowY = py + m * 0.10f
+        // A soft warm bloom and a small core, kept low so it reads as a distant light, not a sun.
+        val glowR = m * 0.62f
         fxMatrix.setScale(glowR, glowR)
-        fxMatrix.postTranslate(px, glowY)
+        fxMatrix.postTranslate(px, py)
         glowShader.setLocalMatrix(fxMatrix)
-        orbGlow.alpha = (orb * 255f).toInt().coerceIn(0, 255)
-        canvas.drawCircle(px, glowY, glowR, orbGlow)
-        val r = m * 0.055f * (0.85f + 0.15f * orb)
+        orbGlow.alpha = (orb * 0.8f * 255f).toInt().coerceIn(0, 255)
+        canvas.drawCircle(px, py, glowR, orbGlow)
+        val r = m * 0.030f * (0.85f + 0.15f * orb)
         fxMatrix.setScale(r, r)
         fxMatrix.postTranslate(px, py)
         coreShader.setLocalMatrix(fxMatrix)
-        orbCore.alpha = (orb * 255f).toInt().coerceIn(0, 255)
+        orbCore.alpha = (orb * 0.9f * 255f).toInt().coerceIn(0, 255)
         canvas.drawCircle(px, py, r, orbCore)
-        val half = m * 0.55f * orb
+        val half = m * 0.30f * orb
         fxMatrix.setScale(half, 1f)
         fxMatrix.postTranslate(px, py)
         streakShader.setLocalMatrix(fxMatrix)
-        streak.alpha = (orb * 200f).toInt().coerceIn(0, 255)
-        canvas.drawRect(px - half, py - 1.2f * density, px + half, py + 1.2f * density, streak)
+        streak.alpha = (orb * 110f).toInt().coerceIn(0, 255)
+        canvas.drawRect(px - half, py - 1.0f * density, px + half, py + 1.0f * density, streak)
+    }
+
+    /** The ring that leaves the centre with every hit: fast at first, then settling, thinning as it goes. */
+    private fun drawRing(canvas: Canvas, progress: Float, power: Float) {
+        val m = max(width, height).toFloat()
+        val p = progress.coerceIn(0f, 1f)
+        val e = 1f - (1f - p) * (1f - p)
+        val tone = if (inv > 0.5f) 0 else 255
+        ringPaint.strokeWidth = density * (2f + 10f * power * (1f - p))
+        ringPaint.color = android.graphics.Color.argb(
+            ((1f - p) * (0.30f + 0.50f * power) * 255f).toInt().coerceIn(0, 255), tone, tone, tone)
+        canvas.drawCircle(width / 2f, height / 2f, m * (0.08f + 0.62f * e), ringPaint)
+    }
+
+    /** The last word typed on the active line, as big as the screen allows, tilted a little. */
+    private fun drawSlam(canvas: Canvas, doc: TerminalDocument, punch: Float, seed: Int) {
+        if (!ctValid) return
+        val row = doc.rows.getOrNull(ctRow) ?: return
+        val from = row.lyricFrom
+        var end = min(revealed(row, ctRow), row.lyricTo)
+        while (end > from && !row.text[end - 1].isLetterOrDigit()) end--
+        var start = end
+        while (start > from && (row.text[start - 1].isLetterOrDigit() || row.text[start - 1] == '\'')) start--
+        if (end - start < 1) return
+        // a very short word borrows the one before it
+        if (end - start < 4 && start > from) {
+            var p = start - 1
+            while (p > from && !row.text[p - 1].isLetterOrDigit()) p--
+            while (p > from && row.text[p - 1].isLetterOrDigit()) p--
+            start = p
+        }
+        val word = row.text.substring(start, end)
+        slam.textSize = min(width, height) * 0.30f * (1f + 0.10f * punch.coerceIn(0f, 1f))
+        val wide = slam.measureText(word)
+        val room = width * 0.88f
+        if (wide > room) slam.textSize = slam.textSize * room / wide
+        val tone = if (inv > 0.5f) 0 else 255
+        slam.color = android.graphics.Color.argb(255, tone, tone, tone)
+        canvas.save()
+        canvas.rotate(if (seed % 2 == 0) -4f else 3f, width / 2f, height / 2f)
+        canvas.drawText(word, width / 2f, height / 2f + slam.textSize * 0.33f, slam)
+        canvas.restore()
+    }
+
+    /** Colour filter that turns the black fades into the colour of the flash. */
+    private fun tintFor(bg: Int): LightingColorFilter? {
+        if (bg == android.graphics.Color.BLACK) return null
+        if (tintColor != bg || tintFilter == null) {
+            tintFilter = LightingColorFilter(0x000000, bg and 0xFFFFFF)
+            tintColor = bg
+        }
+        return tintFilter
     }
 
     /** Where the caret goes this frame (page space), shared by the follow-cam and the caret itself. */
-    private fun resolveCaret(doc: TerminalDocument, cursor: TerminalCursor, codeCaret: TerminalCodeCaret?, textLeft: Float) {
+    private fun resolveCaret(doc: TerminalDocument, cursor: TerminalCursor, codeCaret: TerminalCodeCaret?, textLeft: Float, clampToLyric: Boolean) {
         ctValid = false
         var targetRow = codeCaret?.row ?: cursor.row
         var targetCol = codeCaret?.col ?: cursor.col
+        // In the close-up the caret stays on the words, like the camera, instead of running off
+        // to the closing code underneath them once the line is typed.
+        if (clampToLyric && !cursor.idle) { targetRow = cursor.row; targetCol = cursor.col }
         if (targetRow !in viewport) { targetRow = cursor.row; targetCol = cursor.col }
         if (viewport.indexOf(targetRow) < 0 && !cursor.idle) return
         val row = doc.rows.getOrNull(targetRow)
@@ -626,7 +737,7 @@ internal class TerminalRenderer {
         }
         ctRow = targetRow
         ctX = x
-        ctTyping = codeCaret != null && typingOn && codeCaret.active
+        ctTyping = codeCaret != null && typingOn && codeCaret.active && (!clampToLyric || targetRow == codeCaret.row)
         ctValid = true
     }
 

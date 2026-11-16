@@ -89,3 +89,50 @@ bitmap di renderer); bisa jadi tahap berikutnya.
 ### Test baru
 `TerminalCinemaTest`: lock phonk, ritme acak/balada tidak memicu, batas laju flash,
 breakdown -> dinding -> drop -> close-up, shot mengikuti lirik, motion off = nol efek.
+
+## Update 4: perbaikan dari hasil rekaman 530008.mp4 + impact frame phonk
+Dasar: analisis rekaman build Stage 7 (35 flash dalam 42 dtk, level latar banyak di abu-abu,
+pita hitam saat flash, garis di atas teks, wall kecil, kursor lepas dari lirik).
+
+Perbaikan:
+1. **Flash potong keras**, tanpa ramp abu-abu: putih penuh (75 ms), setiap flash ke-3 abu terang
+   (0,62), teks otomatis hitam. Tidak ada fade.
+2. **Fade tepi** atas/bawah/kiri/kanan kini mengambil warna flash (tidak ada pita hitam lagi);
+   ada fade lembut di sisi kiri/kanan untuk lirik panjang.
+3. **Garis kecepatan di belakang teks** (di margin dan di atas kartu), bukan di atas teks.
+4. **Shot dinding** lebih tenang (sudut lebih kecil), sedikit zoom (1,3x) dan baris lebih
+   terang agar terbaca. **Orb matahari dikurangi**: inti 45% lebih kecil, bloom jauh lebih
+   redup dan sempit, streak pendek, intensitas maks ~60%.
+5. **Kursor tetap di ujung kata** saat close-up (tidak lompat ke baris kode di bawahnya).
+6. **Lirik satu baris** saat Typing nyala (wrap di 64 kolom); kamera yang menggeser.
+7. Band baris aktif hilang di close-up (tidak ada kotak abu-abu bertepi tajam).
+
+Impact frame phonk (baru):
+- **Drop = stutter putih-hitam-putih** (sekali, 0,19 dtk); flash biasa selalu tunggal,
+  maks 2,5/dtk, jarak minimum diuji.
+- **Ring gelombang kejut** keluar dari tengah tiap flash; lebih besar dan tebal saat drop.
+- **Screen shake** pada tiap hentakan, zoom hentakan 7% -> 9% (drop ±11%).
+- Flash hanya aktif setelah mode phonk terkunci (bukan karena kick acak).
+- Skala flash/ring mengikuti "Bass response" (rendah = lebih lembut, 0 = mati).
+
+Test: `TerminalCinemaTest` diperbarui (flash hanya level 0/0,62/1, ring terkirim, jarak minimum
+flash, drop = flash penuh).
+
+## Update 5: pengaturan, sinkron beat, teks kinetik
+Menu opsi Terminal (OptionSheet yang sama) kini punya tiga grup baru:
+- **Camera shots**: Cinematic (default) / Editor (tampilan editor biasa, tanpa close-up dan dinding).
+- **Beat flash**: Off (tanpa flash dan tanpa kata raksasa) / Soft (denyut abu gelap, teks tetap terang)
+  / Full (potong keras putih-hitam). Ring dan shake tetap ikut "Bass response".
+- **Beat sync**: Later 150/75 ms, Exact, Earlier 75/150 ms. Efek terasa telat di speaker ->
+  pilih Earlier; terlalu cepat di Bluetooth -> pilih Later. Jika audio di posisi bergeser belum
+  tersedia, dibaca di posisi normal (tidak pernah kehilangan beat).
+
+Lainnya:
+- **Kata raksasa**: setiap flash, kata terakhir yang diketik dibanting memenuhi layar (hanya
+  sepanjang potongan flash, miring bergantian) seperti video lirik phonk.
+- **Deteksi phonk lebih cepat**: butuh 5 interval kick (sebelumnya 6), ±0,4 dtk lebih awal.
+  Dicek terhadap ritme acak (Random(3)) tanpa false-positive.
+- Test: `editorModeKeepsThePlainView...` (shots=false, flashScale 0 dan 0,4).
+
+Masih belum: CD cover + waveform di pojok (perlu bitmap artwork di renderer), motion blur
+horizontal, auto-turun efek saat FPS drop (performa belum diukur di HP kelas bawah).

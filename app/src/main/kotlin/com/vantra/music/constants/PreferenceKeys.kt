@@ -745,6 +745,31 @@ val TerminalBassResponseKey = stringPreferencesKey("terminalBassResponseV1")
 val TerminalEmotionalZoomKey = stringPreferencesKey("terminalEmotionalZoomV1")
 val TerminalEmphasisMarkersKey = stringPreferencesKey("terminalEmphasisMarkersV1")
 
+/** Camera shots of the Terminal: the close-up that follows the typing and the pulled-back wall. */
+enum class TerminalShotMode(val title: String, val description: String) {
+    CINEMATIC("Cinematic", "close-up while typing, pulled back in instrumentals and breakdowns"),
+    EDITOR("Editor", "always the plain editor view"),
+}
+
+/** The beat flash of phonk / montagem style music; scale is the brightness of the flash. */
+enum class TerminalFlashMode(val title: String, val description: String, val scale: Float) {
+    OFF("Off", "no flashes, no giant words", 0f),
+    SOFT("Soft", "dim grey pulses instead of white", 0.4f),
+    FULL("Full", "hard white and black cuts on the beat", 1f),
+}
+
+/** Beat effects look late (speaker) or early (Bluetooth)? Shift where in the audio they are read. */
+enum class TerminalBeatSync(val title: String, val description: String, val leadMs: Long) {
+    LATER_150("Later 150 ms", "for Bluetooth that makes effects come too early", -150L),
+    LATER_75("Later 75 ms", "slightly later", -75L),
+    EXACT("Exact", "follow the playback position", 0L),
+    EARLIER_75("Earlier 75 ms", "slightly earlier", 75L),
+    EARLIER_150("Earlier 150 ms", "for effects that come after the beat", 150L),
+}
+val TerminalShotModeKey = stringPreferencesKey("terminalShotModeV1")
+val TerminalFlashModeKey = stringPreferencesKey("terminalFlashModeV1")
+val TerminalBeatSyncKey = stringPreferencesKey("terminalBeatSyncV1")
+
 // the ipod player's body colours, ipod.js's three plus a pitch black one with a dark screen
 enum class IpodTheme { SILVER, BLACK, U2, TRUE_DARK }
 

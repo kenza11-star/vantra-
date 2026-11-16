@@ -24,6 +24,12 @@ import com.vantra.music.constants.TerminalTypingSpeed
 import com.vantra.music.constants.TerminalTypingSpeedKey
 import com.vantra.music.constants.TerminalBassResponse
 import com.vantra.music.constants.TerminalBassResponseKey
+import com.vantra.music.constants.TerminalBeatSync
+import com.vantra.music.constants.TerminalBeatSyncKey
+import com.vantra.music.constants.TerminalFlashMode
+import com.vantra.music.constants.TerminalFlashModeKey
+import com.vantra.music.constants.TerminalShotMode
+import com.vantra.music.constants.TerminalShotModeKey
 import com.vantra.music.constants.TerminalEmotionalZoom
 import com.vantra.music.constants.TerminalEmotionalZoomKey
 import com.vantra.music.constants.TerminalEmphasisMarkersKey
@@ -38,6 +44,9 @@ internal fun ColumnScope.TerminalEnhancementOptions() {
     var speed by rememberEnumPreference(TerminalTypingSpeedKey,TerminalTypingSpeed.NORMAL)
     var bass by rememberEnumPreference(TerminalBassResponseKey,TerminalBassResponse.NORMAL)
     var zoom by rememberEnumPreference(TerminalEmotionalZoomKey,TerminalEmotionalZoom.NORMAL)
+    var shots by rememberEnumPreference(TerminalShotModeKey,TerminalShotMode.CINEMATIC)
+    var flash by rememberEnumPreference(TerminalFlashModeKey,TerminalFlashMode.FULL)
+    var sync by rememberEnumPreference(TerminalBeatSyncKey,TerminalBeatSync.EXACT)
     var raw by rememberPreference(TerminalEmphasisMarkersKey,defaultValue="{}")
     val connection=LocalPlayerConnection.current
     val metadata=connection?.mediaMetadata?.collectAsState()?.value
@@ -50,6 +59,15 @@ internal fun ColumnScope.TerminalEnhancementOptions() {
     }
     TerminalBassResponse.entries.forEachIndexed { i,v ->
         OptionRow(selected=bass==v,onClick={bass=v},caption=if(i==0) "Bass response" else null,compact=true) { TwoLines(v.title,v.description) }
+    }
+    TerminalShotMode.entries.forEachIndexed { i,v ->
+        OptionRow(selected=shots==v,onClick={shots=v},caption=if(i==0) "Camera shots" else null,compact=true) { TwoLines(v.title,v.description) }
+    }
+    TerminalFlashMode.entries.forEachIndexed { i,v ->
+        OptionRow(selected=flash==v,onClick={flash=v},caption=if(i==0) "Beat flash (phonk / montagem)" else null,compact=true) { TwoLines(v.title,v.description) }
+    }
+    TerminalBeatSync.entries.forEachIndexed { i,v ->
+        OptionRow(selected=sync==v,onClick={sync=v},caption=if(i==0) "Beat sync" else null,compact=true) { TwoLines(v.title,v.description) }
     }
     TerminalEmotionalZoom.entries.forEachIndexed { i,v ->
         OptionRow(selected=zoom==v,onClick={zoom=v},caption=if(i==0) "Emotional zoom (manual markers)" else null,compact=true) { TwoLines(v.title,v.description) }

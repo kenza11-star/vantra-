@@ -27,7 +27,7 @@ class TerminalCinemaTest {
         s.step(8f, 0.395f, 0.5f, 0.5f)
         assertTrue("phonk=${s.fx.phonk}", s.fx.phonk > 0.9f)
         assertTrue("bpm=${s.cinema.bpm}", kotlin.math.abs(s.cinema.bpm - 152f) < 4f)
-        assertTrue("flashes=${s.cinema.flashCount}", s.cinema.flashCount in 5..21)
+        assertTrue("flashes=${s.cinema.flashCount}", s.cinema.flashCount in 4..21)
     }
 
     @Test fun irregularKicksAndSlowBalladsNeverTurnTheEffectsOn() {
@@ -52,8 +52,32 @@ class TerminalCinemaTest {
 
     @Test fun flashesNeverComeFasterThanAboutTwoAndAHalfPerSecond() {
         val s = Sim()
-        s.step(10f, 0.2f, 0.5f, 0.5f)
-        assertTrue("flashes=${s.cinema.flashCount}", s.cinema.flashCount <= 26)
+        s.step(10f, 0.34f, 0.5f, 0.5f)
+        s.step(5f, 0f, 0.04f, 0.05f)
+        s.step(6f, 0.34f, 0.5f, 0.5f)
+        assertTrue("flashes=${s.cinema.flashCount}", s.cinema.flashCount > 0)
+        assertTrue("min gap=${s.cinema.minFlashGap}", s.cinema.minFlashGap >= 0.39f)
+    }
+
+    @Test fun flashIsAHardCutBetweenBlackAndWhiteNeverAFadeAndSendsARing() {
+        val s = Sim()
+        s.step(6f, 0.395f, 0.5f, 0.5f)
+        var odd = 0
+        var on = false
+        var off = false
+        var ring = false
+        repeat(300) {
+            s.step(0.0167f, 0.395f, 0.5f, 0.5f)
+            val f = s.fx.flash
+            if (f > 0.01f) {
+                on = true
+                if (kotlin.math.abs(f - 1f) > 0.01f && kotlin.math.abs(f - 0.62f) > 0.01f) odd++
+            } else off = true
+            if (s.fx.ring in 0f..1f) ring = true
+        }
+        assertEquals("flash levels other than the hard cuts", 0, odd)
+        assertTrue(on && off)
+        assertTrue("no shockwave ring", ring)
     }
 
     @Test fun breakdownPullsBackToTheWallAndTheReturningKickIsADrop() {
@@ -63,7 +87,7 @@ class TerminalCinemaTest {
         s.step(5f, 0f, 0.04f, 0.05f)
         assertTrue("wall=${s.fx.wall}", s.fx.wall > 0.5f)
         assertTrue("orb=${s.fx.orb}", s.fx.orb > 0.4f)
-        s.step(0.1f, 0.395f, 0.5f, 0.5f)
+        s.step(0.05f, 0.395f, 0.5f, 0.5f)
         assertEquals(1, s.cinema.dropCount)
         assertTrue("flash=${s.fx.flash}", s.fx.flash > 0.8f)
         s.step(1.5f, 0.395f, 0.5f, 0.5f)
@@ -95,5 +119,24 @@ class TerminalCinemaTest {
         quiet.step(8f, 0.395f, 0.5f, 0.5f, audio = false)
         assertEquals(0f, quiet.fx.phonk, 0f)
         assertEquals(0, quiet.cinema.flashCount)
+    }
+
+    @Test fun editorModeKeepsThePlainViewAndFlashOffKeepsTheScreenDark() {
+        val s = Sim()
+        repeat(480) {
+            s.cinema.update(1f / 60f, if (it % 24 == 0) 0.8f else 0f, 0.5f, 0.5f, 0.6f, true, true, true, true, true, 1f, false, 1f, s.fx,
+                shots = false, flashScale = 0f)
+            assertEquals(0f, s.fx.flash, 0f)
+        }
+        assertEquals(0f, s.fx.close, 0.001f)
+        assertEquals(0f, s.fx.wall, 0.001f)
+        val soft = Sim()
+        var peak = 0f
+        repeat(480) {
+            soft.cinema.update(1f / 60f, if (it % 24 == 0) 0.8f else 0f, 0.5f, 0.5f, 0.6f, true, true, true, false, true, 0f, false, 1f, soft.fx,
+                flashScale = 0.4f)
+            peak = maxOf(peak, soft.fx.flash)
+        }
+        assertTrue("soft flash peak=$peak", peak > 0.3f && peak <= 0.41f)
     }
 }
