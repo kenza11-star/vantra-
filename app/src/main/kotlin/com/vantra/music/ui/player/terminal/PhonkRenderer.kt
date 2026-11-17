@@ -69,6 +69,10 @@ internal class PhonkRenderer {
         intArrayOf(0x55FFFFFF, 0x1AFFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
     private val matrix = Matrix()
     private val planeM = Matrix()
+    private val facePath = android.graphics.Path()
+    private val cornerF = FloatArray(8)
+    private val cornerB = FloatArray(8)
+    private val peaks = FloatArray(PhonkState.WaveSamples)
     private val planeSrc = FloatArray(8)
     private val planeDst = FloatArray(8)
     private val edgeA = FloatArray(2)
@@ -324,10 +328,10 @@ internal class PhonkRenderer {
         val punch = if (preview) 0f else fx.punch
         val kickSign = if (fx.tilt < 0f) -1f else 1f
         // a real box in space: it turns slowly towards and away from the viewer, and every hit knocks it
-        val yaw = -0.20f + 0.13f * sin(t * 0.8f) + kickSign * punch * 0.07f
-        val pitch = 0.05f + 0.06f * cos(t * 0.55f) - punch * 0.03f
+        val yaw = -0.46f + 0.16f * sin(t * 0.8f) + kickSign * punch * 0.09f
+        val pitch = 0.11f + 0.07f * cos(t * 0.55f) - punch * 0.04f
         val focal = cs * 2.4f
-        val depth = cs * 0.022f
+        val depth = cs * 0.075f
         canvas.save()
         canvas.translate(cx, cy)
         val pop = 1f + 0.05f * punch
@@ -340,18 +344,33 @@ internal class PhonkRenderer {
         canvas.save()
         canvas.concat(plane(-half, -half, half, half, yaw, pitch, depth, focal))
         stroke.pathEffect = null
-        stroke.color = withAlpha(ink, 55)
+        stroke.color = withAlpha(ink, 110)
         stroke.strokeWidth = max(1f, d * 0.8f)
         canvas.drawRoundRect(-half, -half, half, half, r, r, stroke)
         canvas.restore()
-        stroke.color = withAlpha(ink, 45)
-        stroke.strokeWidth = max(1f, d * 0.7f)
-        for (sx in 0..1) for (sy in 0..1) {
-            val x = if (sx == 0) -half else half
-            val y = if (sy == 0) -half else half
+        // the thickness of the case: four clear plastic sides, lit a little differently, with bright edges
+        for (c in 0..3) {
+            val x = if (c == 1 || c == 2) half else -half
+            val y = if (c >= 2) half else -half
             project(x, y, -depth, yaw, pitch, focal, edgeA)
+            cornerF[c * 2] = edgeA[0]; cornerF[c * 2 + 1] = edgeA[1]
             project(x, y, depth, yaw, pitch, focal, edgeB)
-            canvas.drawLine(edgeA[0], edgeA[1], edgeB[0], edgeB[1], stroke)
+            cornerB[c * 2] = edgeB[0]; cornerB[c * 2 + 1] = edgeB[1]
+        }
+        for (c in 0..3) {
+            val n = (c + 1) % 4
+            facePath.reset()
+            facePath.moveTo(cornerF[c * 2], cornerF[c * 2 + 1])
+            facePath.lineTo(cornerF[n * 2], cornerF[n * 2 + 1])
+            facePath.lineTo(cornerB[n * 2], cornerB[n * 2 + 1])
+            facePath.lineTo(cornerB[c * 2], cornerB[c * 2 + 1])
+            facePath.close()
+            // 0 top, 1 right, 2 bottom, 3 the hinge side on the left, a little denser
+            fill.color = withAlpha(ink, if (c == 3) 78 else if (c == 0) 52 else 34)
+            canvas.drawPath(facePath, fill)
+            stroke.color = withAlpha(ink, 170)
+            stroke.strokeWidth = max(1f, d * 0.8f)
+            canvas.drawLine(cornerF[c * 2], cornerF[c * 2 + 1], cornerB[c * 2], cornerB[c * 2 + 1], stroke)
         }
 
         // the disc in the middle of the case, spinning, the cover in harsh black and white
@@ -478,24 +497,39 @@ internal class PhonkRenderer {
     }
 
     private fun waveform(canvas: Canvas, half: Float, cs: Float, d: Float, ink: Int, s: PhonkState) {
-        val y = half + cs * 0.12f
-        if (dash == null || dashDensity != d) {
-            dash = DashPathEffect(floatArrayOf(d * 1.5f, d * 4f), 0f)
-            dashDensity = d
-        }
-        stroke.color = withAlpha(ink, 200)
-        stroke.strokeWidth = max(1f, d * 1.2f)
-        stroke.pathEffect = dash
-        canvas.drawLine(-half, y, half, y, stroke)
-        stroke.pathEffect = null
-        stroke.strokeWidth = max(1.4f, d * 1.6f)
+        val y = half + cs * 0.13f
         val n = s.wave.size
+        // each kick becomes a peak that falls off to both sides, like the spikes in the video
         for (i in 0 until n) {
             val a = s.wave[(s.waveHead + i) % n]
-            if (a < 0.04f) continue
+            peaks[i] = a
+        }
+        for (i in 0 until n) {
+            var v = peaks[i]
+            if (i > 0) v = max(v, peaks[i - 1] * 0.55f)
+            if (i < n - 1) v = max(v, peaks[i + 1] * 0.55f)
+            if (i > 1) v = max(v, peaks[i - 2] * 0.28f)
+            if (i < n - 2) v = max(v, peaks[i + 2] * 0.28f)
             val x = -half + cs * (i + 0.5f) / n
-            val up = a * cs * 0.14f
-            canvas.drawLine(x, y - up, x, y + up * 0.7f, stroke)
+            val ripple = 0.012f + 0.01f * sin(s.timeS * 3f + i * 0.9f)
+            val up = (v * 0.16f + ripple) * cs
+            if (v < 0.05f) {
+                // quiet: a dotted line
+                fill.color = withAlpha(ink, 170)
+                canvas.drawCircle(x, y, max(1f, d * 0.9f), fill)
+            } else {
+                // a soft halo under a crisp round-capped line with a bright dot at the tip
+                stroke.pathEffect = null
+                stroke.strokeWidth = max(2f, d * 4.5f)
+                stroke.color = withAlpha(ink, (v * 70f).toInt())
+                canvas.drawLine(x, y - up, x, y + up, stroke)
+                stroke.strokeWidth = max(1.4f, d * 1.8f)
+                stroke.color = withAlpha(ink, 235)
+                canvas.drawLine(x, y - up, x, y + up, stroke)
+                fill.color = ink
+                canvas.drawCircle(x, y - up, max(1.6f, d * 1.4f), fill)
+                canvas.drawCircle(x, y + up, max(1.6f, d * 1.4f), fill)
+            }
         }
     }
 
