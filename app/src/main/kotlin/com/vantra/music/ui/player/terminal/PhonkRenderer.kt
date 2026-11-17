@@ -75,7 +75,7 @@ internal class PhonkRenderer {
     private val edgeB = FloatArray(2)
     private val glare = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glareShader = android.graphics.LinearGradient(-1f, 0f, 1f, 0f,
-        intArrayOf(0x00FFFFFF, 0x30FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        intArrayOf(0x00FFFFFF, 0x18FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
     private var dash: DashPathEffect? = null
     private var dashDensity = 0f
 
@@ -260,21 +260,21 @@ internal class PhonkRenderer {
         // landing it flies in from right in front of the camera
         val sign = if (id % 2 == 0) 1f else -1f
         val kickSign = if (fx.tilt < 0f) -1f else 1f
-        val yaw = if (deep) sign * (0.20f + 0.06f * sin(timeS * 1.3f)) + kickSign * fx.punch * 0.07f else sign * 0.18f
-        val pitch = if (deep) 0.06f * sin(timeS * 0.9f + 1f) - fx.punch * 0.03f else 0.04f
+        val yaw = if (deep) sign * (0.09f + 0.03f * sin(timeS * 1.1f)) + kickSign * fx.punch * 0.05f else sign * 0.08f
+        val pitch = if (deep) 0.025f * sin(timeS * 0.9f + 1f) - fx.punch * 0.02f else 0.02f
         val focal = max(regionW, regionH) * 2f
-        val fly = -(1f - landing) * focal * 0.45f
+        val fly = -(1f - landing) * focal * 0.22f
         val blockLeft = cx - blockW / 2f
         val firstBaseline = cy - lines.size * lineH / 2f + lineH * 0.80f
         canvas.save()
         canvas.rotate(tilt, cx, cy)
         // the depth of the letters: copies stacked behind the face, fainter the further back
-        if (deep) {
-            val step = baseSize * 0.055f
-            for (k in 6 downTo 1) {
+        if (deep && fx.punch > 0.25f) {
+            val step = baseSize * 0.04f * fx.punch.coerceAtMost(1f)
+            for (k in 3 downTo 1) {
                 canvas.save()
                 canvas.concat(plane(left, top, right, bottom, yaw, pitch, fly + k * step, focal))
-                lineSet(canvas, blockLeft, firstBaseline, withAlpha(ink, (120f * (1f - k / 7f)).toInt()), 0f)
+                lineSet(canvas, blockLeft, firstBaseline, withAlpha(ink, (90f * (1f - k / 4f)).toInt()), 0f)
                 canvas.restore()
             }
         }
@@ -324,10 +324,10 @@ internal class PhonkRenderer {
         val punch = if (preview) 0f else fx.punch
         val kickSign = if (fx.tilt < 0f) -1f else 1f
         // a real box in space: it turns slowly towards and away from the viewer, and every hit knocks it
-        val yaw = -0.40f + 0.24f * sin(t * 0.8f) + kickSign * punch * 0.12f
-        val pitch = 0.10f + 0.12f * cos(t * 0.55f) - punch * 0.06f
+        val yaw = -0.20f + 0.13f * sin(t * 0.8f) + kickSign * punch * 0.07f
+        val pitch = 0.05f + 0.06f * cos(t * 0.55f) - punch * 0.03f
         val focal = cs * 2.4f
-        val depth = cs * 0.05f
+        val depth = cs * 0.022f
         canvas.save()
         canvas.translate(cx, cy)
         val pop = 1f + 0.05f * punch
@@ -340,12 +340,12 @@ internal class PhonkRenderer {
         canvas.save()
         canvas.concat(plane(-half, -half, half, half, yaw, pitch, depth, focal))
         stroke.pathEffect = null
-        stroke.color = withAlpha(ink, 90)
+        stroke.color = withAlpha(ink, 55)
         stroke.strokeWidth = max(1f, d * 0.8f)
         canvas.drawRoundRect(-half, -half, half, half, r, r, stroke)
         canvas.restore()
-        stroke.color = withAlpha(ink, 120)
-        stroke.strokeWidth = max(1f, d * 0.8f)
+        stroke.color = withAlpha(ink, 45)
+        stroke.strokeWidth = max(1f, d * 0.7f)
         for (sx in 0..1) for (sy in 0..1) {
             val x = if (sx == 0) -half else half
             val y = if (sy == 0) -half else half
@@ -414,7 +414,7 @@ internal class PhonkRenderer {
 
         // the label floats in front of the case, like the credit in the video
         canvas.save()
-        canvas.concat(plane(-half, -half, half, half, yaw, pitch, -depth * 2.4f, focal))
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, -depth * 1.6f, focal))
         label.textSize = cs * 0.07f
         label.color = ink
         canvas.drawText("@" + handle(s), -half + cs * 0.05f, -half - cs * 0.025f, label)
