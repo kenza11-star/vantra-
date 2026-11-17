@@ -604,6 +604,8 @@ internal fun TerminalChrome(
     insetBottom: androidx.compose.ui.unit.Dp,
     /** landscape keeps only the progress hairline until a tap brings the rest back */
     uiAlpha: Float,
+    /** how visible the red progress hairline is; 1 keeps it always on, a style can show it on a tap only */
+    hairlineAlpha: Float = 1f,
 ) {
     val chromeAlpha = if (landscape) uiAlpha else 1f
     val seconds = rememberPlayedSeconds(position)
@@ -638,6 +640,7 @@ internal fun TerminalChrome(
                 Modifier
                     .fillMaxWidth()
                     .height(2.dp)
+                    .graphicsLayer { alpha = hairlineAlpha }
                     .drawBehind {
                         drawRect(Color.White.copy(alpha = 0.12f))
                         val f = (position.positionMs().toFloat() / duration.coerceAtLeast(1L)).coerceIn(0f, 1f)

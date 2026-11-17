@@ -68,6 +68,14 @@ internal class PhonkRenderer {
     private val glowShader = RadialGradient(0f, 0f, 1f,
         intArrayOf(0x55FFFFFF, 0x1AFFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
     private val matrix = Matrix()
+    private val planeM = Matrix()
+    private val planeSrc = FloatArray(8)
+    private val planeDst = FloatArray(8)
+    private val edgeA = FloatArray(2)
+    private val edgeB = FloatArray(2)
+    private val glare = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glareShader = android.graphics.LinearGradient(-1f, 0f, 1f, 0f,
+        intArrayOf(0x00FFFFFF, 0x30FFFFFF, 0x00FFFFFF), floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
     private var dash: DashPathEffect? = null
     private var dashDensity = 0f
 
@@ -82,7 +90,7 @@ internal class PhonkRenderer {
         postConcat(ColorMatrix(floatArrayOf(-1f, 0f, 0f, 0f, 255f, 0f, -1f, 0f, 0f, 255f, 0f, 0f, -1f, 0f, 255f, 0f, 0f, 0f, 1f, 0f)))
     })
 
-    init { glow.shader = glowShader }
+    init { glow.shader = glowShader; glare.shader = glareShader }
 
     // the phrase layout is measured once per phrase and size, not every frame
     private var layoutKey = Int.MIN_VALUE
@@ -159,7 +167,7 @@ internal class PhonkRenderer {
         val chunk = if (preview) null else s.chunks.getOrNull(s.timeline.index)
         val words = if (preview) previewWords(s) else chunk?.words
         if (words != null && words.isNotEmpty()) {
-            drawWords(canvas, words, chunk?.id ?: 0, if (preview) 1f else s.timeline.age, left, top, right, bottom, d, ink, fx, bg)
+            drawWords(canvas, words, chunk?.id ?: 0, if (preview) 1f else s.timeline.age, left, top, right, bottom, d, ink, fx, bg, s.timeS, !preview)
         }
 
         // the CD case, the label and the waveform
@@ -236,29 +244,48 @@ internal class PhonkRenderer {
     }
 
     private fun drawWords(canvas: Canvas, words: List<String>, id: Int, age: Float,
-                          left: Float, top: Float, right: Float, bottom: Float, d: Float, ink: Int, fx: PhonkFx, bg: Int) {
+                          left: Float, top: Float, right: Float, bottom: Float, d: Float, ink: Int, fx: PhonkFx, bg: Int,
+                          timeS: Float, deep: Boolean) {
         val regionW = right - left
         val regionH = bottom - top
         if (regionW <= 0f || regionH <= 0f) return
         ensureLayout(words, id, regionW, regionH)
         val t = (age / 0.13f).coerceIn(0f, 1f)
         val landing = 1f - (1f - t) * (1f - t) * (1f - t)
-        val slam = 1f + 0.30f * (1f - landing)
         val blur = max(1f - t, fx.blur * 0.8f)
         val tilt = ((id * 37) % 9 - 4) * 1.1f
         val cx = left + regionW / 2f
         val cy = top + regionH / 2f
-        canvas.save()
-        canvas.rotate(tilt, cx, cy)
-        canvas.scale(slam, slam, cx, cy)
+        // the block is a plane in space: turned a little, swaying, kicked on every hit, and on
+        // landing it flies in from right in front of the camera
+        val sign = if (id % 2 == 0) 1f else -1f
+        val kickSign = if (fx.tilt < 0f) -1f else 1f
+        val yaw = if (deep) sign * (0.20f + 0.06f * sin(timeS * 1.3f)) + kickSign * fx.punch * 0.07f else sign * 0.18f
+        val pitch = if (deep) 0.06f * sin(timeS * 0.9f + 1f) - fx.punch * 0.03f else 0.04f
+        val focal = max(regionW, regionH) * 2f
+        val fly = -(1f - landing) * focal * 0.45f
         val blockLeft = cx - blockW / 2f
         val firstBaseline = cy - lines.size * lineH / 2f + lineH * 0.80f
+        canvas.save()
+        canvas.rotate(tilt, cx, cy)
+        // the depth of the letters: copies stacked behind the face, fainter the further back
+        if (deep) {
+            val step = baseSize * 0.055f
+            for (k in 6 downTo 1) {
+                canvas.save()
+                canvas.concat(plane(left, top, right, bottom, yaw, pitch, fly + k * step, focal))
+                lineSet(canvas, blockLeft, firstBaseline, withAlpha(ink, (120f * (1f - k / 7f)).toInt()), 0f)
+                canvas.restore()
+            }
+        }
+        canvas.save()
+        canvas.concat(plane(left, top, right, bottom, yaw, pitch, fly, focal))
         // the motion blur: faint copies trailing the words while they land and on every hit
         if (blur > 0.06f) {
             val step = baseSize * 0.045f * blur
-            val sign = if (id % 2 == 0) 1f else -1f
+            val dir = if (id % 2 == 0) 1f else -1f
             for (k in 5 downTo 1) {
-                lineSet(canvas, blockLeft, firstBaseline, withAlpha(ink, (70f * (1f - k / 6f)).toInt()), sign * k * step)
+                lineSet(canvas, blockLeft, firstBaseline, withAlpha(ink, (70f * (1f - k / 6f)).toInt()), dir * k * step)
             }
         }
         // a hit splits the colours a little
@@ -268,6 +295,7 @@ internal class PhonkRenderer {
             lineSet(canvas, blockLeft, firstBaseline, withAlpha(0x19D3FF, 170), off)
         }
         lineSet(canvas, blockLeft, firstBaseline, ink, 0f)
+        canvas.restore()
         canvas.restore()
     }
 
@@ -292,30 +320,44 @@ internal class PhonkRenderer {
                          s: PhonkState, preview: Boolean) {
         val fx = s.fx
         val half = cs / 2f
+        val t = if (preview) 0f else s.timeS
+        val punch = if (preview) 0f else fx.punch
+        val kickSign = if (fx.tilt < 0f) -1f else 1f
+        // a real box in space: it turns slowly towards and away from the viewer, and every hit knocks it
+        val yaw = -0.40f + 0.24f * sin(t * 0.8f) + kickSign * punch * 0.12f
+        val pitch = 0.10f + 0.12f * cos(t * 0.55f) - punch * 0.06f
+        val focal = cs * 2.4f
+        val depth = cs * 0.05f
         canvas.save()
         canvas.translate(cx, cy)
-        val pop = 1f + 0.05f * (if (preview) 0f else fx.punch)
+        val pop = 1f + 0.05f * punch
         canvas.scale(pop, pop)
-        canvas.rotate(-2.4f + 1.2f * sin(s.timeS * 0.9f) + fx.tilt * 40f)
-        canvas.skew(0f, -0.02f)
-        // jewel case: outer frame, inner frame, the hinge and its tabs
+        canvas.rotate(-1.5f + 1.0f * sin(t * 0.9f))
         val r = d * 3f
-        stroke.pathEffect = null
-        stroke.color = withAlpha(ink, 235)
-        stroke.strokeWidth = max(1f, d * 1.1f)
-        canvas.drawRoundRect(-half, -half, half, half, r, r, stroke)
-        stroke.color = withAlpha(ink, 150)
-        stroke.strokeWidth = max(1f, d * 0.7f)
         val inset = cs * 0.035f
-        canvas.drawRoundRect(-half + inset, -half + inset, half - inset, half - inset, r, r, stroke)
-        val hinge = -half + cs * 0.06f
-        canvas.drawLine(hinge, -half + inset, hinge, half - inset, stroke)
-        for (k in 0..2) {
-            val y = -half * 0.62f + k * cs * 0.4f
-            canvas.drawLine(-half - d * 2.5f, y, -half + cs * 0.03f, y, stroke)
+
+        // the back plate, dim, and the four edges that give the case its thickness
+        canvas.save()
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, depth, focal))
+        stroke.pathEffect = null
+        stroke.color = withAlpha(ink, 90)
+        stroke.strokeWidth = max(1f, d * 0.8f)
+        canvas.drawRoundRect(-half, -half, half, half, r, r, stroke)
+        canvas.restore()
+        stroke.color = withAlpha(ink, 120)
+        stroke.strokeWidth = max(1f, d * 0.8f)
+        for (sx in 0..1) for (sy in 0..1) {
+            val x = if (sx == 0) -half else half
+            val y = if (sy == 0) -half else half
+            project(x, y, -depth, yaw, pitch, focal, edgeA)
+            project(x, y, depth, yaw, pitch, focal, edgeB)
+            canvas.drawLine(edgeA[0], edgeA[1], edgeB[0], edgeB[1], stroke)
         }
-        // the disc, spinning, with the cover in harsh black and white (inverted on a white cut)
+
+        // the disc in the middle of the case, spinning, the cover in harsh black and white
         val discR = cs * 0.41f
+        canvas.save()
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, 0f, focal))
         canvas.save()
         canvas.translate(cs * 0.025f, 0f)
         canvas.rotate(s.spin)
@@ -346,13 +388,78 @@ internal class PhonkRenderer {
         stroke.color = withAlpha(ink, 90)
         canvas.drawCircle(0f, 0f, discR * 0.27f, stroke)
         canvas.restore()
-        // the label above the case, like the credit in the video
+        canvas.restore()
+
+        // the front plate: outer frame, inner frame, the hinge and its tabs, and a glare that
+        // slides across the plastic as the case turns
+        canvas.save()
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, -depth, focal))
+        stroke.color = withAlpha(ink, 235)
+        stroke.strokeWidth = max(1f, d * 1.1f)
+        canvas.drawRoundRect(-half, -half, half, half, r, r, stroke)
+        stroke.color = withAlpha(ink, 150)
+        stroke.strokeWidth = max(1f, d * 0.7f)
+        canvas.drawRoundRect(-half + inset, -half + inset, half - inset, half - inset, r, r, stroke)
+        val hinge = -half + cs * 0.06f
+        canvas.drawLine(hinge, -half + inset, hinge, half - inset, stroke)
+        for (k in 0..2) {
+            val y = -half * 0.62f + k * cs * 0.4f
+            canvas.drawLine(-half - d * 2.5f, y, -half + cs * 0.03f, y, stroke)
+        }
+        matrix.setScale(half * 0.45f, half)
+        matrix.postTranslate(sin(t * 0.8f + 1.2f) * half * 0.9f + yaw * half, 0f)
+        glareShader.setLocalMatrix(matrix)
+        canvas.drawRoundRect(-half + inset, -half + inset, half - inset, half - inset, r, r, glare)
+        canvas.restore()
+
+        // the label floats in front of the case, like the credit in the video
+        canvas.save()
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, -depth * 2.4f, focal))
         label.textSize = cs * 0.07f
         label.color = ink
         canvas.drawText("@" + handle(s), -half + cs * 0.05f, -half - cs * 0.025f, label)
-        // the waveform under it
+        canvas.restore()
+        // the waveform under it, a little in front as well
+        canvas.save()
+        canvas.concat(plane(-half, -half, half, half, yaw, pitch, -depth * 1.3f, focal))
         waveform(canvas, half, cs, d, ink, s)
         canvas.restore()
+        canvas.restore()
+    }
+
+    /** where a point lands on the screen (relative to the middle) after the turn and the perspective */
+    private fun project(x: Float, y: Float, z: Float, yaw: Float, pitch: Float, focal: Float, out: FloatArray) {
+        val cy = cos(yaw)
+        val sy = sin(yaw)
+        val x1 = x * cy + z * sy
+        val z1 = -x * sy + z * cy
+        val cp = cos(pitch)
+        val sp = sin(pitch)
+        val y1 = y * cp - z1 * sp
+        val z2 = y * sp + z1 * cp
+        val scale = focal / max(focal * 0.2f, focal + z2)
+        out[0] = x1 * scale
+        out[1] = y1 * scale
+    }
+
+    /**
+     * The matrix that carries the flat rectangle l,t,r,b to where it lands once it has been turned
+     * about its own middle by [yaw] and [pitch] and pushed back by [z] (negative = towards the viewer).
+     */
+    private fun plane(l: Float, t: Float, r: Float, b: Float, yaw: Float, pitch: Float, z: Float, focal: Float): Matrix {
+        val cx = (l + r) / 2f
+        val cy = (t + b) / 2f
+        planeSrc[0] = l; planeSrc[1] = t
+        planeSrc[2] = r; planeSrc[3] = t
+        planeSrc[4] = r; planeSrc[5] = b
+        planeSrc[6] = l; planeSrc[7] = b
+        for (i in 0..3) {
+            project(planeSrc[i * 2] - cx, planeSrc[i * 2 + 1] - cy, z, yaw, pitch, focal, edgeA)
+            planeDst[i * 2] = cx + edgeA[0]
+            planeDst[i * 2 + 1] = cy + edgeA[1]
+        }
+        planeM.setPolyToPoly(planeSrc, 0, planeDst, 0, 4)
+        return planeM
     }
 
     private fun handle(s: PhonkState): String {

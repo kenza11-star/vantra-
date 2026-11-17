@@ -179,6 +179,17 @@ fun PhonkPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, previ
         }
         val controlsAlpha by animateFloatAsState(if (controlsOn) 1f else 0f, tween(220), label = "phonkControls")
 
+        // the red progress line only shows for a moment after a tap
+        var tapShown by remember { mutableStateOf(false) }
+        LaunchedEffect(reveal) {
+            if (reveal > 0) {
+                tapShown = true
+                delay(ControlsHideMs)
+                tapShown = false
+            }
+        }
+        val hairlineAlpha by animateFloatAsState(if (tapShown || menuOpen) 1f else 0f, tween(220), label = "phonkHairline")
+
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
@@ -215,6 +226,7 @@ fun PhonkPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, previ
                     insetEnd = insets.end,
                     insetBottom = insets.bottom,
                     uiAlpha = controlsAlpha,
+                    hairlineAlpha = hairlineAlpha,
                 )
                 if (controlsAlpha > 0.01f) {
                     Box(Modifier.fillMaxSize()
