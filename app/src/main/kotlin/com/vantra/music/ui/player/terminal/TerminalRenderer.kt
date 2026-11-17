@@ -502,7 +502,7 @@ internal class TerminalRenderer {
             }
             // On every flash the word being typed is slammed across the screen, like the lyric
             // videos of phonk edits: it is only there for the length of the cut.
-            if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, punch, fxSeed, fx?.glitch ?: 0f)
+            if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, cursor, punch, fxSeed, fx?.glitch ?: 0f)
             val fxRing = fx?.ring ?: -1f
             if (fxRing >= 0f) drawRing(canvas, fxRing, fx?.ringPower ?: 0f)
             val fxRing2 = fx?.ring2 ?: -1f
@@ -686,6 +686,137 @@ internal class TerminalRenderer {
         x *= 0x2c1b3c6d
         x = x xor (x ushr 12)
         return (x and 0xFFFF) / 65535f
+    }
+
+    /**
+     * One glitch frame: the recorded scene played back as three colour channels pushed apart,
+     * torn slices shoved sideways, displaced blocks, thin coloured lines and scanlines on top.
+     * The pattern is new every few milliseconds, like a broken signal.
+     */
+    private fun drawGlitch(canvas: Canvas, picture: Picture, amount: Float, seed: Int, timeNs: Long) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val a = amount.coerceIn(0f, 1f)
+        val frame = (timeNs / 24_000_000L).toInt()
+        val s = seed * 131 + frame * 17
+        canvas.drawColor(android.graphics.Color.BLACK)
+        // chromatic aberration: red, green and blue copies added on top of each other
+        val split = density * (2f + 16f * a) * (0.6f + 0.8f * hash01(s + 3))
+        val dir = if (hash01(s + 5) < 0.5f) 1f else -1f
+        val channels = arrayOf(redOnly, greenOnly, blueOnly)
+        for (c in 0..2) {
+            channelPaint.colorFilter = channels[c]
+            val layer = canvas.saveLayer(0f, 0f, w, h, channelPaint)
+            canvas.translate((c - 1) * split * dir, 0f)
+            canvas.drawPicture(picture)
+            canvas.restoreToCount(layer)
+        }
+        channelPaint.colorFilter = null
+        // torn slices that slide sideways: more of them the harder the glitch
+        val slices = 3 + (6f * a).toInt()
+        for (i in 0 until slices) {
+            val y0 = hash01(s * 7 + i * 13) * h * 0.92f
+            val sh = h * (0.015f + 0.07f * hash01(s * 11 + i * 29))
+            val dx = (hash01(s * 3 + i * 19) - 0.5f) * 2f * w * 0.16f * a
+            val save = canvas.save()
+            canvas.clipRect(0f, y0, w, min(h, y0 + sh))
+            canvas.translate(dx, 0f)
+            canvas.drawPicture(picture)
+            canvas.restoreToCount(save)
+        }
+        // datamosh blocks: a piece of the picture shown again somewhere else
+        val blocks = (3f * a).toInt() + 1
+        for (i in 0 until blocks) {
+            val bw = w * (0.12f + 0.25f * hash01(s * 5 + i * 31))
+            val bh = h * (0.04f + 0.10f * hash01(s * 9 + i * 37))
+            val bx = hash01(s * 13 + i * 41) * (w - bw)
+            val by = hash01(s * 17 + i * 43) * (h - bh)
+            val dx = (hash01(s * 19 + i * 47) - 0.5f) * w * 0.3f
+            val dy = (hash01(s * 23 + i * 53) - 0.5f) * h * 0.1f
+            val save = canvas.save()
+            canvas.clipRect(bx, by, bx + bw, by + bh)
+            canvas.translate(dx, dy)
+            canvas.drawPicture(picture)
+            canvas.restoreToCount(save)
+        }
+        // thin lines in cyan, magenta, white and yellow
+        val lineColors = intArrayOf(0x19D3FF, 0xFF2D95, 0xFFFFFF, 0xFFE21A)
+        val lines = 2 + (7f * a).toInt()
+        for (i in 0 until lines) {
+            val y = hash01(s * 29 + i * 59) * h
+            val lw = w * (0.15f + 0.6f * hash01(s * 31 + i * 61))
+            val x = hash01(s * 37 + i * 67) * (w - lw)
+            barPaint.color = (lineColors[i % lineColors.size] and 0xFFFFFF) or (((90f + 150f * a).toInt().coerceIn(0, 255)) shl 24)
+            canvas.drawRect(x, y, x + lw, y + max(1f, density * (1f + 1.5f * hash01(s + i))), barPaint)
+        }
+        // scanlines on top of everything
+        var shader = scanShader
+        if (shader == null) {
+            val tile = Bitmap.createBitmap(1, 3, Bitmap.Config.ARGB_8888)
+            tile.setPixel(0, 0, 0x00000000)
+            tile.setPixel(0, 1, 0x00000000)
+            tile.setPixel(0, 2, 0x66000000)
+            shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            scanShader = shader
+            scanPaint.shader = shader
+        }
+        fxMatrix.setScale(1f, max(1f, density))
+        shader.setLocalMatrix(fxMatrix)
+        scanPaint.alpha = (255f * (0.35f + 0.65f * a)).toInt().coerceIn(0, 255)
+        canvas.drawRect(0f, 0f, w, h, scanPaint)
+    }
+
+    /**
+     * The word being typed, slammed across the screen for the length of a flash: tilted one way
+     * and then the other, with the red and cyan channels apart and the top and bottom halves
+     * shoved against each other while the picture glitches.
+     */
+    private fun drawSlam(canvas: Canvas, doc: TerminalDocument, cursor: TerminalCursor, punch: Float, seed: Int, glitch: Float) {
+        if (width <= 0 || height <= 0) return
+        val line = doc.lines.getOrNull(cursor.line) ?: return
+        val typed = cursor.typed.coerceIn(0, line.text.length)
+        val shown = if (cursor.idle || typed <= 0) line.text else line.text.substring(0, typed)
+        val last = shown.trim().split(Regex("\\s+")).lastOrNull { it.isNotEmpty() } ?: return
+        val word = last.trim { !it.isLetterOrDigit() }.ifEmpty { last }.uppercase()
+        val w = width.toFloat()
+        val h = height.toFloat()
+        slam.textSize = 100f
+        val measured = max(1f, slam.measureText(word))
+        slam.textSize = min(100f * w * 0.92f / measured, h * 0.42f)
+        val cx = w / 2f
+        val cy = h / 2f
+        val base = cy - (slam.ascent() + slam.descent()) / 2f
+        val ink = if (inv > 0.5f) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        val g = glitch.coerceIn(0f, 1f)
+        val grow = 1f + 0.10f * punch.coerceIn(0f, 1f)
+        val lean = if (seed % 2 == 0) -6f else 6f
+        val save = canvas.save()
+        canvas.rotate(lean, cx, cy)
+        canvas.scale(grow, grow, cx, cy)
+        if (g > 0.25f) {
+            val off = density * (3f + 12f * g)
+            slam.color = android.graphics.Color.argb(190, 255, 45, 85)
+            canvas.drawText(word, cx - off, base, slam)
+            slam.color = android.graphics.Color.argb(190, 25, 211, 255)
+            canvas.drawText(word, cx + off, base, slam)
+        }
+        slam.color = ink
+        if (g > 0.3f) {
+            val shift = (hash01(seed * 13 + 7) - 0.5f) * 2f * density * 30f * g
+            val top = canvas.save()
+            canvas.clipRect(0f, 0f, w, cy)
+            canvas.translate(shift, 0f)
+            canvas.drawText(word, cx, base, slam)
+            canvas.restoreToCount(top)
+            val bottom = canvas.save()
+            canvas.clipRect(0f, cy, w, h)
+            canvas.translate(-shift, 0f)
+            canvas.drawText(word, cx, base, slam)
+            canvas.restoreToCount(bottom)
+        } else {
+            canvas.drawText(word, cx, base, slam)
+        }
+        canvas.restoreToCount(save)
     }
 
     /** Radial speed lines from the middle of the screen, a fresh pattern for every hit. */

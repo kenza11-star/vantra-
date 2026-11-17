@@ -21,7 +21,7 @@ jobs:
   build_release:
     name: Build Vantra (arm64 GMS release)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v5
