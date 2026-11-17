@@ -981,14 +981,21 @@ private fun PlayerSheet(
                         com.vantra.music.ui.player.styles.LocalStyleInteractive provides styleInteractive,
                         com.vantra.music.ui.player.styles.LocalStyleCovered provides styleCoveredNow,
                     ) {
-                        com.vantra.music.ui.player.styles.AlternatePlayerStyle(
-                            style = playerStyle,
-                            actions = styleActions,
-                            // under a lyrics page that fills the screen it needn't be drawn
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = if (styleCovered) 0f else 1f },
-                        )
+                        // changing style fades the old one into the new instead of cutting
+                        androidx.compose.animation.Crossfade(
+                            targetState = playerStyle,
+                            animationSpec = androidx.compose.animation.core.tween(360),
+                            label = "playerStyleSwitch",
+                        ) { shown ->
+                            com.vantra.music.ui.player.styles.AlternatePlayerStyle(
+                                style = shown,
+                                actions = styleActions,
+                                // under a lyrics page that fills the screen it needn't be drawn
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { alpha = if (styleCovered) 0f else 1f },
+                            )
+                        }
                     }
                 }
                 // closed with the player, so it isn't still up the next time it opens

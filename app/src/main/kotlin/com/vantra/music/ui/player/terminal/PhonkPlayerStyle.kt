@@ -309,10 +309,30 @@ private fun PhonkScene(
     }
 
     if (preview) {
-        // a selector card is a still frame: the stage is up, nothing flashes
+        // a selector card runs the picture live, with a made-up beat: the case turns, the words change
         LaunchedEffect(track.title, track.artist) {
-            state.stage.snap(1f)
-            frame.longValue++
+            val s = state
+            s.stage.snap(1f)
+            var last = 0L
+            var nextKick = 0.5f
+            while (true) {
+                val now = androidx.compose.runtime.withFrameNanos { it }
+                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceIn(0f, 0.1f)
+                last = now
+                s.timeS += dt
+                s.spin += dt * 26f
+                val kick = if (s.timeS >= nextKick) { nextKick += 0.6f; 0.6f } else 0f
+                s.beat.update(dt, kick, 0f, 0.3f, 1f, true, s.fx)
+                s.wavePeak = max(s.wavePeak, kick * 0.9f)
+                s.waveAcc += dt
+                while (s.waveAcc >= 0.05f) {
+                    s.waveAcc -= 0.05f
+                    s.wave[s.waveHead] = s.wavePeak.coerceIn(0f, 1f)
+                    s.waveHead = (s.waveHead + 1) % s.wave.size
+                    s.wavePeak = 0f
+                }
+                frame.longValue = now
+            }
         }
     } else {
         LaunchedEffect(connection, activePlayer, lifecycle, showing) {
@@ -327,6 +347,7 @@ private fun PhonkScene(
                             source.value = BeatSource.NONE
                             if (!shown) return@collectLatest
                             var last = 0L
+                            var stageTarget = 0f
                             while (true) {
                                 if (renderer.failed) {
                                     failed.value = true
@@ -384,7 +405,14 @@ private fun PhonkScene(
                                     else if (changed && s.timeline.index >= 0 && playing && s.sync.source != BeatSource.AUDIO) 0.6f else 0f
                                 s.beat.update(stepDt, kick, if (s.sync.source == BeatSource.AUDIO) tracker.bass else 0f,
                                     prefs.flashScale, prefs.bassGain, motionOn, s.fx)
-                                s.stage.step(stepDt, if (s.timeline.index >= 0) 1f else 0f, 38f, 12f)
+                                // the case slides out to its side once a phrase is up and stays there through
+                                // the gaps between phrases; with no lyrics it rests in the middle
+                                val lyricUp = s.timeline.index >= 0
+                                s.sinceLyric = if (lyricUp) 0f else s.sinceLyric + stepDt
+                                stageTarget = if (lyricUp || (hasLyrics && s.sinceLyric < 3f)) 1f else 0f
+                                s.stage.step(stepDt, stageTarget, 22f, 9.5f)
+                                val chunkId = s.chunks.getOrNull(s.timeline.index)?.id
+                                s.roll.step(stepDt, if (chunkId != null) ((chunkId * 37) % 9 - 4) * 1.1f else 0f, 30f, 11f)
                                 s.timeS += stepDt
                                 // the disc turns with the music and jumps on a kick
                                 val energy = if (s.sync.source == BeatSource.AUDIO) tracker.energy else 0.2f
@@ -398,7 +426,7 @@ private fun PhonkScene(
                                     s.waveHead = (s.waveHead + 1) % s.wave.size
                                     s.wavePeak = 0f
                                 }
-                                s.settled = if (!playing && s.fx.isQuiet() && abs(s.stage.value - (if (s.timeline.index >= 0) 1f else 0f)) < 0.01f) s.settled + 1 else 0
+                                s.settled = if (!playing && s.fx.isQuiet() && abs(s.stage.value - stageTarget) < 0.01f && abs(s.roll.velocity) < 0.01f) s.settled + 1 else 0
                                 frame.longValue = now
                             }
                         }

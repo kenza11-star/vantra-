@@ -38,6 +38,10 @@ internal class PhonkState {
     var discontinuity = 0L
     var lastChunks: List<PhonkChunk>? = null
     var settled = 0
+    /** seconds since a phrase was last up: the case waits for the next one before sliding back to the middle */
+    var sinceLyric = 99f
+    /** the case's roll, following the tilt of the phrase being sung */
+    val roll = Spring()
 
     companion object {
         const val WaveSamples = 56
@@ -136,7 +140,7 @@ internal class PhonkRenderer {
         val light = flash >= 0.5f
         val ink = if (light) Color.BLACK else Color.WHITE
         val frame = (timeNs / 16_000_000L).toInt()
-        val punch = if (preview) 0f else fx.punch
+        val punch = fx.punch
         val cx0 = w / 2f
         val cy0 = h / 2f
         canvas.save()
@@ -159,50 +163,50 @@ internal class PhonkRenderer {
         val top: Float
         val bottom: Float
         if (portrait) {
-            cs = w * 0.66f; cx = w / 2f; cy = h * 0.70f
+            cs = w * 0.56f; cx = w / 2f; cy = h * 0.70f
             left = w * 0.07f; right = w * 0.93f; top = h * 0.08f; bottom = cy - cs / 2f - h * 0.08f
         } else {
-            cs = min(w * 0.36f, h * 0.70f); cx = w - w * 0.035f - cs / 2f; cy = h * 0.46f
-            left = w * 0.04f; right = cx - cs / 2f - w * 0.02f; top = h * 0.10f; bottom = h * 0.90f
+            cs = min(w * 0.31f, h * 0.60f); cx = w - w * 0.08f - cs / 2f; cy = h * 0.48f
+            left = w * 0.05f; right = cx - cs / 2f - w * 0.03f; top = h * 0.10f; bottom = h * 0.90f
         }
         val stage = if (preview) 1f else s.stage.value.coerceIn(0f, 1f)
+        // with no phrase up the case sits in the middle; when one arrives it slides out to its place
+        val ease = stage * stage * (3f - 2f * stage)
+        val big = max(cs, if (portrait) w * 0.62f else min(w * 0.34f, h * 0.62f))
+        val ccx = cx0 + (cx - cx0) * ease
+        val ccy = cy0 + (cy - cy0) * ease
+        val ccs = big + (cs - big) * ease
 
         // the phrase being sung
+        val previewId = (s.timeS / 1.4f).toInt()
         val chunk = if (preview) null else s.chunks.getOrNull(s.timeline.index)
-        val words = if (preview) previewWords(s) else chunk?.words
+        val words = if (preview) previewWords(s, previewId) else chunk?.words
+        val phraseId = if (preview) previewId else chunk?.id ?: 0
         if (words != null && words.isNotEmpty()) {
-            drawWords(canvas, words, chunk?.id ?: 0, if (preview) 1f else s.timeline.age, left, top, right, bottom, d, ink, fx, bg, s.timeS, !preview)
+            val age = if (preview) s.timeS - previewId * 1.4f else s.timeline.age
+            drawWords(canvas, words, phraseId, age, left, top, right, bottom, d, ink, fx, bg, s.timeS, true, portrait)
         }
 
-        // the CD case, the label and the waveform
-        if (stage > 0.01f) {
-            val layer = if (stage < 0.99f) canvas.saveLayerAlpha(0f, 0f, w, h, (stage * 255f).toInt().coerceIn(0, 255)) else -1
-            drawCase(canvas, cx, cy, cs * (0.9f + 0.1f * stage), d, ink, light, bg, s, preview)
-            if (layer >= 0) canvas.restoreToCount(layer)
-        }
+        // the CD case, the label and the waveform: always there, turned towards the lyrics
+        val roll = if (preview) tiltOf(previewId) else s.roll.value
+        drawCase(canvas, ccx, ccy, ccs, d, ink, light, bg, s, preview, portrait, roll)
 
-        // the eclipse that waits while nobody sings
-        if (stage < 0.99f) {
-            val ex = if (portrait) w * 0.5f else w * 0.28f
-            val ey = if (portrait) h * 0.40f else h * 0.44f
-            eclipse(canvas, ex, ey, min(w, h), ink, bg, 1f - stage, punch.coerceIn(0f, 1f))
-        }
-
-        // the shockwave: a ring and its echo leave the disc (or the eclipse) on every kick
-        if (fx.ring >= 0f || fx.ring2 >= 0f) {
-            val rx = if (stage > 0.5f) cx else if (portrait) w * 0.5f else w * 0.28f
-            val ry = if (stage > 0.5f) cy else if (portrait) h * 0.40f else h * 0.44f
-            if (fx.ring >= 0f) shockwave(canvas, rx, ry, w, h, d, fx.ring, fx.ringPower, ink)
-            if (fx.ring2 >= 0f) shockwave(canvas, rx, ry, w, h, d, fx.ring2, fx.ringPower * 0.55f, ink)
-        }
+        // the shockwave: a ring and its echo leave the disc on every kick
+        if (fx.ring >= 0f) shockwave(canvas, ccx, ccy, w, h, d, fx.ring, fx.ringPower, ink)
+        if (fx.ring2 >= 0f) shockwave(canvas, ccx, ccy, w, h, d, fx.ring2, fx.ringPower * 0.55f, ink)
         canvas.restore()
     }
 
+    /** the tilt in degrees a phrase is set at; the case rolls the same way */
+    private fun tiltOf(id: Int): Float = ((id * 37) % 9 - 4) * 1.1f
+
     // ---- the words ------------------------------------------------------------------------
 
-    private fun previewWords(s: PhonkState): List<String> {
+    private fun previewWords(s: PhonkState, step: Int): List<String> {
         val parts = s.title.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        return if (parts.isEmpty()) listOf("Phonk") else parts.take(2)
+        if (parts.isEmpty()) return listOf("Phonk")
+        val picked = parts.drop((step * 2) % parts.size).take(2)
+        return picked.ifEmpty { parts.take(2) }
     }
 
     private fun wordScale(word: String, index: Int): Float =
@@ -249,7 +253,7 @@ internal class PhonkRenderer {
 
     private fun drawWords(canvas: Canvas, words: List<String>, id: Int, age: Float,
                           left: Float, top: Float, right: Float, bottom: Float, d: Float, ink: Int, fx: PhonkFx, bg: Int,
-                          timeS: Float, deep: Boolean) {
+                          timeS: Float, deep: Boolean, portrait: Boolean) {
         val regionW = right - left
         val regionH = bottom - top
         if (regionW <= 0f || regionH <= 0f) return
@@ -257,17 +261,17 @@ internal class PhonkRenderer {
         val t = (age / 0.13f).coerceIn(0f, 1f)
         val landing = 1f - (1f - t) * (1f - t) * (1f - t)
         val blur = max(1f - t, fx.blur * 0.8f)
-        val tilt = ((id * 37) % 9 - 4) * 1.1f
+        val tilt = tiltOf(id)
         val cx = left + regionW / 2f
         val cy = top + regionH / 2f
         // the block is a plane in space: turned a little, swaying, kicked on every hit, and on
         // landing it flies in from right in front of the camera
-        val sign = if (id % 2 == 0) 1f else -1f
-        val kickSign = if (fx.tilt < 0f) -1f else 1f
-        val yaw = if (deep) sign * (0.09f + 0.03f * sin(timeS * 1.1f)) + kickSign * fx.punch * 0.05f else sign * 0.08f
-        val pitch = if (deep) 0.025f * sin(timeS * 0.9f + 1f) - fx.punch * 0.02f else 0.02f
-        val focal = max(regionW, regionH) * 2f
-        val fly = -(1f - landing) * focal * 0.22f
+        // the words turn towards the case, the case towards the words
+        val yaw = if (portrait) 0.02f * sin(timeS * 1.1f) else -(0.09f + 0.03f * sin(timeS * 1.1f)) - fx.punch * 0.05f
+        val pitch = if (portrait) 0.07f + 0.02f * sin(timeS * 0.9f) + fx.punch * 0.03f
+            else 0.025f * sin(timeS * 0.9f + 1f) - fx.punch * 0.02f
+        val focal = max(regionW, regionH) * 3.2f
+        val fly = -(1f - landing) * focal * 0.16f
         val blockLeft = cx - blockW / 2f
         val firstBaseline = cy - lines.size * lineH / 2f + lineH * 0.80f
         canvas.save()
@@ -321,22 +325,24 @@ internal class PhonkRenderer {
     // ---- the CD case ----------------------------------------------------------------------
 
     private fun drawCase(canvas: Canvas, cx: Float, cy: Float, cs: Float, d: Float, ink: Int, light: Boolean, bg: Int,
-                         s: PhonkState, preview: Boolean) {
+                         s: PhonkState, preview: Boolean, portrait: Boolean, roll: Float) {
         val fx = s.fx
         val half = cs / 2f
-        val t = if (preview) 0f else s.timeS
-        val punch = if (preview) 0f else fx.punch
-        val kickSign = if (fx.tilt < 0f) -1f else 1f
+        val t = s.timeS
+        val punch = fx.punch
         // a real box in space: it turns slowly towards and away from the viewer, and every hit knocks it
-        val yaw = -0.46f + 0.16f * sin(t * 0.8f) + kickSign * punch * 0.09f
-        val pitch = 0.11f + 0.07f * cos(t * 0.55f) - punch * 0.04f
-        val focal = cs * 2.4f
+        // turned towards the lyrics (to the left sideways, upwards when the lyrics are above), swaying
+        // a little and knocked further round by every hit
+        val yaw = if (portrait) 0.10f * sin(t * 0.8f) else 0.36f + 0.12f * sin(t * 0.8f) + punch * 0.10f
+        val pitch = if (portrait) -(0.26f + 0.06f * sin(t * 0.6f)) - punch * 0.05f
+            else 0.08f + 0.05f * cos(t * 0.55f) - punch * 0.03f
+        val focal = cs * 4f
         val depth = cs * 0.075f
         canvas.save()
         canvas.translate(cx, cy)
         val pop = 1f + 0.05f * punch
         canvas.scale(pop, pop)
-        canvas.rotate(-1.5f + 1.0f * sin(t * 0.9f))
+        canvas.rotate(roll * 0.5f + 0.8f * sin(t * 0.9f))
         val r = d * 3f
         val inset = cs * 0.035f
 

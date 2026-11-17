@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +37,8 @@ import com.vantra.music.R
 import com.vantra.music.extensions.toggleRepeatMode
 import com.vantra.music.ui.player.styles.StyleActions
 import com.vantra.music.ui.player.styles.StyleInsets
+import com.vantra.music.ui.player.styles.StyleMenu
+import com.vantra.music.ui.player.styles.StyleTones
 
 /** Native, labelled 48dp targets. Menu stays in the rotated content tree instead of an unrotated
  * popup window. Every action delegates to the same player/StyleActions as the original controls.
@@ -69,36 +72,26 @@ internal fun TerminalControls(landscape:Boolean, insets:StyleInsets, menuOpen:Bo
             if(vertical) Column(verticalArrangement=Arrangement.spacedBy(4.dp)) { buttons() }
             else Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { buttons() }
         }
-        if(menuOpen) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=0.72f))
-                .semantics { contentDescription="Close Terminal menu" }.clickable { setMenuOpen(false) })
-            Column(Modifier.align(Alignment.TopEnd).padding(end=insets.end+16.dp,
-                top=if(landscape) 68.dp else insets.top+68.dp)
-                .width(224.dp).heightIn(max=(maxHeight-100.dp).coerceAtLeast(48.dp))
-                .background(Color(0xFF111315),RoundedCornerShape(4.dp))
-                .border(1.dp,Color(0xFF30363D),RoundedCornerShape(4.dp))
-                .verticalScroll(rememberScrollState())) {
-                @Composable fun entry(label:String,icon:Int,close:Boolean=true,action:()->Unit) {
-                    DropdownMenuItem(text={Text(label,color=Color.White)},
-                        leadingIcon={Icon(painterResource(icon),null,tint=Color.White,modifier=Modifier.size(20.dp))},
-                        onClick={if(close) setMenuOpen(false);action()},modifier=Modifier.heightIn(min=48.dp))
-                }
-                actions.onLyrics?.let { open -> entry("Lyrics",R.drawable.lyrics,action=open) }
-                if(connection != null && transport != null) {
-                    entry(if(transport.shuffleModeEnabled) "Shuffle: on" else "Shuffle: off",R.drawable.shuffle,false) {
-                        connection.player.shuffleModeEnabled=!connection.player.shuffleModeEnabled
-                    }
-                    entry(when(transport.repeatMode) { androidx.media3.common.Player.REPEAT_MODE_ONE -> "Repeat: one"
-                        androidx.media3.common.Player.REPEAT_MODE_ALL -> "Repeat: all"; else -> "Repeat: off" },
-                        if(transport.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) R.drawable.repeat_one else R.drawable.repeat,false) {
-                        connection.player.toggleRepeatMode()
-                    }
-                }
-                entry("Other menu",R.drawable.more_horiz,action=actions.onOtherMenu)
-                entry(if(landscape) "Turn upright" else "Rotate",R.drawable.screen_rotation,action=onRotate)
-                entry("Edit player",R.drawable.tune,action=actions.onEditPlayer)
-            }
+        // the same round-button menu the Bedside style opens: a label beside each circle, rising
+        // out of the three dots, with the screen dimmed behind it
+        val tones=remember {
+            StyleTones(played=Color.Black,remaining=Color.Black,ink=Color.White,
+                inkSoft=Color.White.copy(alpha=0.62f),chip=Color.White.copy(alpha=0.12f))
         }
+        StyleMenu(
+            open=menuOpen,
+            onOpenChange=setMenuOpen,
+            tones=tones,
+            actions=actions,
+            rotated=landscape,
+            onRotate={ onRotate() },
+            atBottom=false,
+            end=insets.end+16.dp+4.dp,
+            edge=if(landscape) 12.dp+4.dp else insets.top+12.dp+4.dp,
+            buttonSize=40.dp,
+            showButton=false,
+            pill=true,
+        )
         Box(Modifier.align(Alignment.TopEnd).padding(end=insets.end+16.dp,
             top=if(landscape) 12.dp else insets.top+12.dp)) {
             TerminalControl(R.drawable.more_horiz,if(menuOpen) "Close menu" else "Open menu",true) { setMenuOpen(!menuOpen) }
