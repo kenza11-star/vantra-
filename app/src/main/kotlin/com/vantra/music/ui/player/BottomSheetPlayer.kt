@@ -1678,10 +1678,12 @@ private fun PlayerSheet(
                     studio.settleOn(focused, restyled) {
                         studio.openSheet(com.vantra.music.ui.player.studio.StudioSheet.BEDSIDE)
                     }
-                } else if (playerStyles.getOrNull(focused) == PlayerStyle.TERMINAL) {
-                    // the camera, typing, quality and orientation, in a sheet over the terminal itself
-                    val restyled = playerStyle != PlayerStyle.TERMINAL
-                    if (restyled) onPlayerStyleChange(PlayerStyle.TERMINAL)
+                } else if (playerStyles.getOrNull(focused) == PlayerStyle.TERMINAL || playerStyles.getOrNull(focused) == PlayerStyle.PHONK) {
+                    // the camera, typing, quality and orientation, in a sheet over the terminal itself (the
+                    // Phonk style shares the beat, flash and sync options of that sheet)
+                    val terminalLike = playerStyles.getOrNull(focused) ?: PlayerStyle.TERMINAL
+                    val restyled = playerStyle != terminalLike
+                    if (restyled) onPlayerStyleChange(terminalLike)
                     studio.settleOn(focused, restyled) {
                         studio.openSheet(com.vantra.music.ui.player.studio.StudioSheet.TERMINAL)
                     }
@@ -1702,7 +1704,7 @@ private fun PlayerSheet(
             },
         )
         // the Poster's, the iPod's and the bedside's sheets, each over its own style
-        if (playerStyle == PlayerStyle.POSTER || playerStyle == PlayerStyle.IPOD || playerStyle == PlayerStyle.TERMINAL || playerStyle.isBedside) {
+        if (playerStyle == PlayerStyle.POSTER || playerStyle == PlayerStyle.IPOD || playerStyle == PlayerStyle.TERMINAL || playerStyle == PlayerStyle.PHONK || playerStyle.isBedside) {
             com.vantra.music.ui.player.studio.StyleSheets(studio)
         }
         if (playerStyle.flagshipFamily) {

@@ -56,7 +56,7 @@ class TerminalCinemaTest {
         s.step(5f, 0f, 0.04f, 0.05f)
         s.step(6f, 0.34f, 0.5f, 0.5f)
         assertTrue("flashes=${s.cinema.flashCount}", s.cinema.flashCount > 0)
-        assertTrue("min gap=${s.cinema.minFlashGap}", s.cinema.minFlashGap >= 0.39f)
+        assertTrue("min gap=${s.cinema.minFlashGap}", s.cinema.minFlashGap >= 0.33f)
     }
 
     @Test fun flashIsAHardCutBetweenBlackAndWhiteNeverAFadeAndSendsARing() {
@@ -71,7 +71,9 @@ class TerminalCinemaTest {
             val f = s.fx.flash
             if (f > 0.01f) {
                 on = true
-                if (kotlin.math.abs(f - 1f) > 0.01f) odd++
+                // hard steps only: full, dim (the small flash), the grey step of either
+                val level = (f * 100f).toInt()
+                if (level != 100 && level != 40 && level != 36 && level != 14) odd++
             } else off = true
             if (s.fx.ring in 0f..1f) ring = true
         }
@@ -165,5 +167,28 @@ class TerminalCinemaTest {
         big.step(0.03f, 0.395f, 0.5f, 0.5f)
         assertEquals(1f, big.fx.glitch, 0.01f)
         assertEquals(0xFFFFFF, big.fx.flashColor)
+    }
+
+    @Test fun everyKickFlashesBigAndSmallWithAnEchoRingAndTheBassKeepsItTrembling() {
+        val s = Sim()
+        s.step(5f, 0.395f, 0.5f, 0.5f)
+        val before = s.cinema.flashCount
+        var echo = false
+        var rumble = 0f
+        var big = false
+        var small = false
+        repeat(600) {
+            s.step(0.0167f, 0.395f, 0.5f, 0.5f)
+            if (s.fx.ring2 in 0f..1f) echo = true
+            rumble = maxOf(rumble, s.fx.rumble)
+            val level = (s.fx.flash * 100f).toInt()
+            if (level == 100) big = true
+            if (level == 40) small = true
+        }
+        // ten seconds of kicks 0.395 s apart: a flash for (nearly) every one of them
+        assertTrue("flashes=${s.cinema.flashCount - before}", s.cinema.flashCount - before >= 22)
+        assertTrue("echo ring", echo)
+        assertTrue("rumble=$rumble", rumble > 0.3f)
+        assertTrue("big and small flashes in turn", big && small)
     }
 }

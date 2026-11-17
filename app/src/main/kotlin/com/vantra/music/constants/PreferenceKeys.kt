@@ -651,10 +651,12 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
     BEDSIDE_TILES("Bedside", "Bedside"),
     // lyrics typed out as syntax-highlighted code in a dark 3D scene, the camera moving with the beat
     TERMINAL("Terminal", "Terminal"),
+    // a phonk / montagem lyric video: the lyrics a phrase at a time next to a CD case, every beat a white cut and a shockwave
+    PHONK("Phonk", "Phonk"),
     // a look module's own player, drawn from its layout; kept last so the others keep their places, and only offered while such a module is on
     MODULE("Module", "Module");
 
-    val editable: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE || this == POSTER || this == IPOD || this == TERMINAL || isBedside
+    val editable: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE || this == POSTER || this == IPOD || this == TERMINAL || this == PHONK || isBedside
 
     // the two nightstand styles share their sheet, their night look and their lock screen rules
     val isBedside: Boolean get() = this == BEDSIDE || this == BEDSIDE_TILES
@@ -690,6 +692,7 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
             // the lyrics stage sits under the timeline, the way the classic sits under the flagship
             listOf(TIMELINE, LYRICS),
             listOf(TERMINAL),
+            listOf(PHONK),
         )
     }
 }

@@ -53,6 +53,7 @@ internal class TerminalRenderer {
     private var panReady = false
     private var inv = 0f
     private var splitNow = 0f
+    private var blurNow = 0f
     private var shotWall = 0f
     private val fxMatrix = Matrix()
     private val fxPoint = FloatArray(2)
@@ -270,16 +271,18 @@ internal class TerminalRenderer {
             if (width <= 0 || height <= 0 || charW <= 0f) return
             val punch = fx?.punch ?: 0f
             val tilt = fx?.tilt ?: 0f
+            val rumble = fx?.rumble ?: 0f
+            blurNow = if ((fx?.phonk ?: 0f) > 0.5f) punch else 0f
             if (punch > 0.005f || tilt != 0f) {
-                canvas.scale(1f + 0.09f * punch, 1f + 0.09f * punch, width / 2f, height / 2f)
+                canvas.scale(1f + 0.11f * punch, 1f + 0.11f * punch, width / 2f, height / 2f)
                 canvas.rotate(Math.toDegrees(tilt.toDouble()).toFloat(), width / 2f, height / 2f)
             }
             // A hit also shakes the picture a little, a new offset every frame.
-            if (punch > 0.02f) {
+            // and the bass keeps it trembling a little between the hits
+            if (punch > 0.02f || rumble > 0.03f) {
                 val frame = (timeNs / 16_000_000L).toInt()
-                val sx = (hash01(frame * 2 + fxSeed) - 0.5f) * 2f * 5f * density * punch
-                val sy = (hash01(frame * 2 + 1 + fxSeed * 7) - 0.5f) * 2f * 5f * density * punch
-                canvas.translate(sx, sy)
+                val amp = density * (5f * punch + 1.4f * rumble)
+                canvas.translate((hash01(frame * 2 + fxSeed) - 0.5f) * 2f * amp, (hash01(frame * 2 + 1 + fxSeed * 7) - 0.5f) * 2f * amp)
             }
             val resetMotion = generation != motionGeneration
             motionGeneration = generation
@@ -502,6 +505,8 @@ internal class TerminalRenderer {
             if (fxFlash > 0.01f && (fx?.phonk ?: 0f) > 0.5f) drawSlam(canvas, doc, punch, fxSeed, fx?.glitch ?: 0f)
             val fxRing = fx?.ring ?: -1f
             if (fxRing >= 0f) drawRing(canvas, fxRing, fx?.ringPower ?: 0f)
+            val fxRing2 = fx?.ring2 ?: -1f
+            if (fxRing2 >= 0f) drawRing(canvas, fxRing2, (fx?.ringPower ?: 0f) * 0.55f)
 
         } catch (error: RuntimeException) {
             android.util.Log.e("VantraTerminal", "Editor rendering failed", error)
@@ -543,6 +548,14 @@ internal class TerminalRenderer {
                 canvas.drawText(row.text, start, end, left + xAt(row, start) - off, y, paint)
                 paint.color = color(0x19D3FF, 0.55f * splitNow * alpha)
                 canvas.drawText(row.text, start, end, left + xAt(row, start) + off, y, paint)
+            }
+            // the words smear sideways for a moment on every hit
+            if (blurNow > 0.12f && activeLyric && words && fade >= 1f && start < end) {
+                val step = paint.textSize * 0.03f * blurNow
+                for (trail in 3 downTo 1) {
+                    paint.color = ink(row.spans[k + 2], alpha * 0.22f * (1f - trail / 4f))
+                    canvas.drawText(row.text, start, end, left + xAt(row, start) - trail * step, y, paint)
+                }
             }
             val halo = glow && activeLyric && words
             if (halo) paint.setShadowLayer(lyric.textSize * 0.6f, 0f, 0f, color(0xFFC890, 0.22f * mix))
@@ -726,135 +739,15 @@ internal class TerminalRenderer {
         val p = progress.coerceIn(0f, 1f)
         val e = 1f - (1f - p) * (1f - p)
         val tone = if (inv > 0.5f) 0 else 255
-        ringPaint.strokeWidth = density * (2f + 10f * power * (1f - p))
-        ringPaint.color = android.graphics.Color.argb(
-            ((1f - p) * (0.30f + 0.50f * power) * 255f).toInt().coerceIn(0, 255), tone, tone, tone)
-        canvas.drawCircle(width / 2f, height / 2f, m * (0.08f + 0.62f * e), ringPaint)
-    }
-
-    /** The last word typed on the active line, as big as the screen allows, tilted a little. */
-    private fun drawSlam(canvas: Canvas, doc: TerminalDocument, punch: Float, seed: Int, glitch: Float) {
-        if (!ctValid) return
-        val row = doc.rows.getOrNull(ctRow) ?: return
-        val from = row.lyricFrom
-        var end = min(revealed(row, ctRow), row.lyricTo)
-        while (end > from && !row.text[end - 1].isLetterOrDigit()) end--
-        var start = end
-        while (start > from && (row.text[start - 1].isLetterOrDigit() || row.text[start - 1] == '\'')) start--
-        if (end - start < 1) return
-        // a very short word borrows the one before it
-        if (end - start < 4 && start > from) {
-            var p = start - 1
-            while (p > from && !row.text[p - 1].isLetterOrDigit()) p--
-            while (p > from && row.text[p - 1].isLetterOrDigit()) p--
-            start = p
-        }
-        val word = row.text.substring(start, end)
-        slam.textSize = min(width, height) * 0.30f * (1f + 0.10f * punch.coerceIn(0f, 1f))
-        val wide = slam.measureText(word)
-        val room = width * 0.88f
-        if (wide > room) slam.textSize = slam.textSize * room / wide
-        val cx = width / 2f
-        val cy = height / 2f + slam.textSize * 0.33f
-        // top and bottom halves slide apart while the picture glitches, and the colours split
-        val tear = if (glitch > 0.3f) slam.textSize * 0.05f * glitch * (if (seed % 2 == 0) 1f else -1f) else 0f
-        val off = slam.textSize * 0.03f * (0.4f + glitch)
-        val tone = if (inv > 0.5f) 0 else 255
-        canvas.save()
-        canvas.rotate(if (seed % 2 == 0) -4f else 3f, width / 2f, height / 2f)
-        slam.color = android.graphics.Color.argb(230, 255, 45, 85)
-        slamPass(canvas, word, cx - off, cy, tear)
-        slam.color = android.graphics.Color.argb(230, 25, 211, 255)
-        slamPass(canvas, word, cx + off, cy, tear)
-        slam.color = android.graphics.Color.argb(255, tone, tone, tone)
-        slamPass(canvas, word, cx, cy, tear)
-        canvas.restore()
-    }
-
-    private fun slamPass(canvas: Canvas, word: String, x: Float, y: Float, tear: Float) {
-        val mid = height / 2f
-        canvas.save()
-        canvas.clipRect(0f, 0f, width.toFloat(), mid)
-        canvas.drawText(word, x + tear, y, slam)
-        canvas.restore()
-        canvas.save()
-        canvas.clipRect(0f, mid, width.toFloat(), height.toFloat())
-        canvas.drawText(word, x - tear, y, slam)
-        canvas.restore()
-    }
-
-    /**
-     * The glitched picture: the recorded scene played back as separate red, green and blue copies a
-     * few pixels apart (chromatic aberration), then torn into horizontal slices that slide sideways,
-     * a few displaced blocks, thin bars of cyan, magenta and white, and scanlines on top. Every frame
-     * has its own pattern, so it flickers like a damaged signal.
-     */
-    private fun drawGlitch(canvas: Canvas, picture: Picture, glitch: Float, seed: Int, timeNs: Long) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val amp = glitch.coerceIn(0f, 1f)
-        val frame = (timeNs / 16_000_000L).toInt() * 31 + seed * 17
-        // 1. chromatic aberration of the whole picture
-        val split = density * (2f + 9f * amp) * (if (hash01(frame) > 0.5f) 1f else -1f)
-        canvas.drawColor(android.graphics.Color.BLACK)
-        for (channel in 0..2) {
-            channelPaint.colorFilter = when (channel) { 0 -> redOnly; 1 -> greenOnly; else -> blueOnly }
-            canvas.saveLayer(0f, 0f, w, h, channelPaint)
-            canvas.translate((channel - 1) * split, 0f)
-            canvas.drawPicture(picture)
-            canvas.restore()
-        }
-        // 2. torn slices that slide sideways
-        val slices = 3 + (amp * 6f).toInt()
-        for (i in 0 until slices) {
-            val sliceH = h * (0.015f + 0.07f * hash01(frame * 29 + i * 11 + 3))
-            val y = hash01(frame * 13 + i * 7) * (h - sliceH)
-            val dx = (hash01(frame * 5 + i * 3 + 9) - 0.5f) * 2f * density * (14f + 70f * amp)
-            canvas.save()
-            canvas.clipRect(0f, y, w, y + sliceH)
-            canvas.translate(dx, 0f)
-            canvas.drawPicture(picture)
-            canvas.restore()
-        }
-        // 3. a couple of displaced blocks
-        for (i in 0 until 2) {
-            val bw = w * (0.08f + 0.20f * hash01(frame * 3 + i * 19 + 5))
-            val bh = h * (0.02f + 0.06f * hash01(frame * 7 + i * 23 + 1))
-            val x = hash01(frame * 11 + i * 13 + 2) * (w - bw)
-            val y = hash01(frame * 17 + i * 5 + 4) * (h - bh)
-            val dx = (hash01(frame * 19 + i * 3 + 6) - 0.5f) * 2f * density * 90f * amp
-            val dy = (hash01(frame * 23 + i * 7 + 8) - 0.5f) * 2f * density * 30f * amp
-            canvas.save()
-            canvas.clipRect(x, y, x + bw, y + bh)
-            canvas.translate(dx, dy)
-            canvas.drawPicture(picture)
-            canvas.restore()
-        }
-        // 4. thin bars of colour
-        val bars = 1 + (amp * 3f).toInt()
-        for (i in 0 until bars) {
-            val y = hash01(frame * 17 + i * 5 + 1) * h
-            val barH = density * (1.5f + 9f * hash01(frame * 23 + i * 9 + 2))
-            val c = GlitchColors[(frame + i) and 3]
-            barPaint.color = (c and 0xFFFFFF) or (((0.55f + 0.35f * amp) * 255f).toInt() shl 24)
-            canvas.drawRect(0f, y, w, y + barH, barPaint)
-        }
-        // 5. scanlines
-        scanPaint.shader = scanlines()
-        scanPaint.alpha = (amp * 0.55f * 255f).toInt().coerceIn(0, 255)
-        canvas.drawRect(0f, 0f, w, h, scanPaint)
-    }
-
-    private fun scanlines(): Shader {
-        scanShader?.let { return it }
-        val tile = Bitmap.createBitmap(1, 4, Bitmap.Config.ARGB_8888)
-        tile.setPixel(0, 2, 0x99000000.toInt())
-        val shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-        val m = Matrix()
-        m.setScale(1f, max(1f, density * 0.9f))
-        shader.setLocalMatrix(m)
-        scanShader = shader
-        return shader
+        val radius = m * (0.08f + 0.70f * e)
+        val strength = (0.30f + 0.50f * power.coerceIn(0f, 1f)) * (1f - p)
+        // a wide soft halo under a crisp edge, both thinning as the ring flies out
+        ringPaint.strokeWidth = density * (6f + 26f * power.coerceIn(0f, 1.4f) * (1f - p))
+        ringPaint.color = android.graphics.Color.argb((strength * 0.30f * 255f).toInt().coerceIn(0, 255), tone, tone, tone)
+        canvas.drawCircle(width / 2f, height / 2f, radius, ringPaint)
+        ringPaint.strokeWidth = density * (2f + 9f * power.coerceIn(0f, 1.4f) * (1f - p))
+        ringPaint.color = android.graphics.Color.argb((strength * 255f).toInt().coerceIn(0, 255), tone, tone, tone)
+        canvas.drawCircle(width / 2f, height / 2f, radius, ringPaint)
     }
 
     /** Colour filter that turns the black fades into the colour of the flash. */

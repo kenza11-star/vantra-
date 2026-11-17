@@ -235,7 +235,7 @@ fun TerminalPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
     }
 }
 
-private const val ControlsHideMs = 3_500L
+internal const val ControlsHideMs = 3_500L
 
 // ---- the scene --------------------------------------------------------------------------
 
@@ -571,7 +571,7 @@ private data class TerminalFrameSettings(val intensity: Float, val quality: Term
     val beat: Boolean, val typing: Boolean, val typingSpeed: Float, val bassGain: Float, val zoomGain: Float,
     val cinematic: Boolean, val flashScale: Float, val beatLeadMs: Long)
 
-private const val BlinkPollMs = 265L
+internal const val BlinkPollMs = 265L
 
 /** Real synchronized lyrics only; absent lyrics produce a code-only status document. */
 private fun buildDocument(
@@ -591,7 +591,7 @@ private fun buildDocument(
 // ---- the chrome around the scene ---------------------------------------------------------
 
 @Composable
-private fun TerminalChrome(
+internal fun TerminalChrome(
     track: StyleTrack,
     position: LivePosition,
     duration: Long,
@@ -688,7 +688,7 @@ private fun isLowEndDevice(context: Context): Boolean {
  * style is on screen, and not at all when the system's auto-rotate is off.
  */
 @Composable
-private fun rememberDeviceSideways(enabled: Boolean): Boolean {
+internal fun rememberDeviceSideways(enabled: Boolean): Boolean {
     val context = LocalContext.current
     val showing = rememberStyleShowing()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -745,7 +745,7 @@ private fun rememberDeviceSideways(enabled: Boolean): Boolean {
  * A swipe from the edge shows them briefly. It changes nothing but the window's bars.
  */
 @Composable
-private fun ImmersiveWhileLandscape(active: Boolean) {
+internal fun ImmersiveWhileLandscape(active: Boolean) {
     val view = LocalView.current
     val showing = rememberStyleShowing()
     val lifecycle = LocalLifecycleOwner.current.lifecycle

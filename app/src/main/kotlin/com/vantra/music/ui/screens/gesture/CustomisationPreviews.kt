@@ -126,6 +126,21 @@ internal fun PlayerStylePreview(style: PlayerStyle) {
                 Bar(6.dp, 10.dp, Color(0xFFFF2A2A))
             }
         }
+        // big white words on black beside a CD case, the way the phonk lyric videos set them
+        PlayerStyle.PHONK -> Row(
+            Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Bar(58.dp, 12.dp, Color.White)
+                Bar(40.dp, 12.dp, Color.White)
+            }
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(52.dp).background(Color.White, CircleShape)) {
+                Box(Modifier.size(34.dp).background(Color.Black, CircleShape))
+                Box(Modifier.size(10.dp).background(Color.White, CircleShape))
+            }
+        }
         // the video across the card with a line of lyrics over it and the pane's bar at the bottom right
         PlayerStyle.VIDEO -> Box(Modifier.fillMaxSize().background(ArtFill)) {
             Column(Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 22.dp)) {

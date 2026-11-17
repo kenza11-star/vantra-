@@ -38,11 +38,18 @@ internal class TerminalFx {
     var ring = -1f
     var ringPower = 0f
 
+    /** the echo of the ring, a moment behind it, -1 when it is not out */
+    var ring2 = -1f
+
+    /** 0..1 the bass keeping the picture trembling between hits (phonk mode only) */
+    var rumble = 0f
+
     fun clear() {
         close = 0f; wall = 0f; orb = 0f; phonk = 0f
         punch = 0f; tilt = 0f; flash = 0f; lines = 0f; split = 0f; bpm = 0f
         ring = -1f; ringPower = 0f
         flashColor = 0xFFFFFF; glitch = 0f
+        ring2 = -1f; rumble = 0f
     }
 }
 
@@ -75,6 +82,7 @@ internal class TerminalCinema {
     private var flashPeak = 1f
     private var flashTwice = false
     private var flashCycle = 0
+    private var bigCycle = 0
     private var flashRgb = 0xFFFFFF
     private var flashRgb2 = 0xFFFFFF
     private var glitch = 0f
@@ -177,12 +185,15 @@ internal class TerminalCinema {
             // Only music that has proved to be phonk-like gets the impact frames. Every kick tears the
             // picture a little, every other kick is also a hard coloured cut with a ring, and the
             // returning kick after a breakdown (the drop) is the biggest hit of all.
+            // Every kick flashes (the rate stays under three a second), big and small in turn: a
+            // big kick is a full coloured cut, the one between is a dim white pulse.
             val live = lastAmount > 0.5f
-            if (live) glitch = max(glitch, 0.4f)
-            if (parity % 2 == 0 && sinceFlash >= FlashGap && live) {
-                fire(false)
-                hit(0.6f, 0.45f)
-                glitch = max(glitch, 0.85f)
+            val big = parity % 2 == 0
+            if (live) glitch = max(glitch, if (big) 0.5f else 0.4f)
+            if (live && sinceFlash >= FlashGap) {
+                fire(false, big)
+                hit(if (big) 0.7f else 0.4f, 0.45f)
+                if (big) glitch = max(glitch, 0.85f)
             }
             if (returning) {
                 drop = 1f; punch = 1.25f; lines = 1f
@@ -253,18 +264,21 @@ internal class TerminalCinema {
         // Flash Off / Soft also calm the glitch (it keeps half its strength), Bass response scales it.
         out.glitch = (max(glitch, glitchLong) * (0.5f + 0.5f * flashScale.coerceIn(0f, 1f)) * min(1f, g)).coerceIn(0f, 1f)
         out.ring = if (ringAge < ringSpan) ringAge / ringSpan else -1f
+        val echo = ringAge - RingEcho
+        out.ring2 = if (echo >= 0f && echo < ringSpan) echo / ringSpan else -1f
+        out.rumble = (amount * bass.coerceIn(0f, 1f) * min(1f, g)).coerceIn(0f, 1f)
         out.ringPower = ringPower * min(1f, g)
         lastAmount = amount
     }
 
     /** One flash: a hard cut to white (or light grey every third time), not a fade. */
-    private fun fire(twice: Boolean) {
+    private fun fire(twice: Boolean, big: Boolean = true) {
         if (sinceFlash < minFlashGap) minFlashGap = sinceFlash
         flashAge = 0f
-        flashPeak = 1f
+        flashPeak = if (twice || big) 1f else SoftFlash
         flashTwice = twice
-        // ordinary cuts walk through the palette; a drop is white, then magenta or cyan
-        flashRgb = if (twice) 0xFFFFFF else FlashColors[flashCycle % FlashColors.size]
+        // big cuts walk through the palette, small ones are white; a drop is white, then magenta or cyan
+        flashRgb = if (twice) 0xFFFFFF else if (big) FlashColors[bigCycle++ % FlashColors.size] else 0xFFFFFF
         flashRgb2 = if (dropCount % 2 == 0) 0xFF2D95 else 0x19D3FF
         flashCycle++
         sinceFlash = 0f
@@ -285,10 +299,10 @@ internal class TerminalCinema {
      */
     private fun flashPulse(t: Float, twice: Boolean): Float {
         if (t < FlashHold) return 1f
-        if (!twice) return 0f
+        if (!twice) return if (t < FlashHold + FlashGrey) GreyStep else 0f
         if (t < FlashHold + FlashDip) return 0f
         if (t < 2f * FlashHold + FlashDip) return 1f
-        return 0f
+        return if (t < 2f * FlashHold + FlashDip + FlashGrey) GreyStep else 0f
     }
 
     private companion object {
@@ -301,8 +315,14 @@ internal class TerminalCinema {
         const val HoldKick = 1.2f
 
         /** flashes never come faster than this, for photosensitive viewers */
-        const val FlashGap = 0.40f
+        const val FlashGap = 0.34f
+        const val FlashGrey = 0.05f
+        const val GreyStep = 0.36f
+
+        /** brightness of the small flash between the big ones */
+        const val SoftFlash = 0.4f
         const val FlashHold = 0.075f
+        const val RingEcho = 0.12f
         const val FlashDip = 0.04f
 
         /** colours of successive flashes: mostly white, with hot magenta, cyan and red between */

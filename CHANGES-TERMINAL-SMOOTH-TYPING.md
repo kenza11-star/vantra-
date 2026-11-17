@@ -165,3 +165,48 @@ glitch tanpa beat phonk, drop = glitch 1,0 dan flash putih).
 
 Catatan: `Picture` + `saveLayer` dipakai pada API 24+; belum diuji di perangkat. Jika terasa berat
 di HP tertentu, set kualitas ke Low atau Beat flash Off.
+
+## Update 7: player baru "Phonk" + impact frame Terminal yang lebih keras
+Referensi: `530111_1.mp4` (video lirik phonk: teks per frasa, CD case, flash putih-hitam, ring
+eklips) dan `530117.mp4` (rekaman build Terminal).
+
+### Player baru: Phonk (`PlayerStyle.PHONK`, muncul di selector setelah Terminal)
+- **Panggung hitam**, lirik **satu frasa (1-3 kata) per beat** di kiri: besar, miring bergantian,
+  kata fungsi kecil ("you", "out", "be") diset lebih kecil, mendarat dengan blur gerak.
+  Frasa dipotong dari baris lirik (`PhonkChunker`); waktunya mengikuti lirik, **frame
+  pendaratannya menempel ke kick** (`PhonkTimeline`, maks ±0,13 dtk dari jadwal).
+- **CD case di kanan**: cover lagu dalam hitam-putih kontras tinggi (negatif saat flash putih),
+  piringan berputar mengikuti energi musik dan melompat tiap kick, label serif `@artis` di atas,
+  **waveform bertitik** di bawah yang melonjak tiap kick. Tanpa cover: piringan spiral.
+- **Tiap beat/bass**: layar **putih -> abu -> hitam** (potong keras, teks dan cover otomatis
+  terbalik), zoom hentakan, getar layar, tilt bergantian, **ring gelombang kejut + ring gema**,
+  garis kecepatan pada kick aksen (kick pertama dari empat), RGB split pada teks, dan getar
+  halus terus-menerus mengikuti level bass ("bergelegar").
+- **Idle** (intro/instrumental): cincin eklips dengan glow seperti frame pertama video, berdenyut.
+- Tanpa audio yang bisa dibaca (cast/DRM): pergantian frasa menjadi pengganti kick.
+- Kerangka sama dengan Terminal (gesture, menu, putar 90 derajat, kontrol yang menepi saat musik
+  main, kini juga di portrait). Menu ... membuka sheet opsi Terminal; **Beat flash (Off/Soft/Full)**,
+  **Beat sync**, **Bass response**, **Intensity**, dan Reduced Motion berlaku untuk Phonk.
+- Aman: flash <3 per detik (jarak minimum 0,34 dtk, diuji), mati bila Reduced Motion atau
+  Beat flash Off.
+- File: `PhonkStage.kt` (logika), `PhonkRenderer.kt` (gambar), `PhonkPlayerStyle.kt` (composable
+  + loop). Pemasangan: `PlayerStyle.PHONK`, dispatcher, bottom sheet, kartu preview.
+
+### Terminal: impact frame lebih keras
+- **Flash di tiap kick** (sebelumnya tiap kick ke-2), **besar-kecil bergantian**: kick besar =
+  potongan berwarna penuh (putih/magenta/cyan/merah) + glitch 0,85; kick di antaranya = denyut
+  putih redup (0,4). Potongan kini **3 langkah**: putih -> abu -> hitam.
+- **Ring gema** (ring kedua 0,12 dtk di belakang yang pertama) dengan halo lembut + tepi tajam.
+- **Blur gerak**: kata aktif menyapu ke samping sesaat tiap hentakan.
+- **Rumble**: bass membuat gambar bergetar halus di antara hentakan (hanya mode phonk).
+- Zoom hentakan 9% -> 11%.
+
+### Test
+`PhonkStageTest` (frasa, pencarian, pendaratan ke kick, flash tiap kick <3/dtk, level
+putih-abu-hitam, Off/Soft/Reduced Motion) dan `TerminalCinemaTest` (flash tiap kick besar-kecil,
+ring gema, rumble).
+
+### Catatan jujur
+- Belum dikompilasi/dijalankan; mirip video "100%" tidak mungkin dijamin: font, bentuk CD case, dan
+  seni piringan memakai cover lagu asli, bukan aset video.
+- Cover dimuat lewat Coil (pola yang sama dengan `CoverThemeColor`).
