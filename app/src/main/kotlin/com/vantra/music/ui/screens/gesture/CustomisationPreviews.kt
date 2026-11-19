@@ -127,6 +127,12 @@ internal fun PlayerStylePreview(style: PlayerStyle) {
             }
         }
         // big white words on black beside a CD case, the way the phonk lyric videos set them
+        // a cube and a spike on a blue wall, the way the genre's levels start
+        PlayerStyle.GEOMETRY -> Box(Modifier.fillMaxSize().background(Color(0xFF1B4FA8))) {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(22.dp).background(Color(0xFF0B2347)))
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 22.dp).size(18.dp).background(Color(0xFF30E6FF)))
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 22.dp).size(16.dp).background(Color.Black))
+        }
         PlayerStyle.PHONK -> Row(
             Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),

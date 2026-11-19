@@ -653,6 +653,8 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
     TERMINAL("Terminal", "Terminal"),
     // a phonk / montagem lyric video: the lyrics a phrase at a time next to a CD case, every beat a white cut and a shockwave
     PHONK("Phonk", "Phonk"),
+    // a rhythm platformer built out of the playing song: a cube runs a level whose obstacles land on the beats, a held finger jumps
+    GEOMETRY("Geometry", "Geometry"),
     // a look module's own player, drawn from its layout; kept last so the others keep their places, and only offered while such a module is on
     MODULE("Module", "Module");
 
@@ -693,11 +695,23 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
             listOf(TIMELINE, LYRICS),
             listOf(TERMINAL),
             listOf(PHONK),
+            listOf(GEOMETRY),
         )
     }
 }
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
+
+// ---- the Geometry player style's flame streak ----
+
+/** songs won in a row-up: a hard song adds one at once, a calm one every second win */
+val GeometryStreakKey = intPreferencesKey("geometryStreak")
+
+/** calm songs won since the last flame, 0 or 1 */
+val GeometryEasyWinsKey = intPreferencesKey("geometryEasyWins")
+
+/** the best percentage on each song, one "id|percent" per line */
+val GeometryBestKey = stringPreferencesKey("geometryBest")
 
 // ---- the Terminal player style's own options ----
 
