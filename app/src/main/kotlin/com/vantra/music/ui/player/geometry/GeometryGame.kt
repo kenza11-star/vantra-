@@ -116,6 +116,12 @@ internal class Obstacle(val kind: Kind, val x: Float, val y: Float, val w: Float
 /** a pattern the song asks for, arriving at the cube's place at [arrivalMs] of the song */
 internal class Spec(val arrivalMs: Long, val pattern: Pattern, val mirrored: Boolean = false)
 
+/** where the cube was and how, saved in practice mode so a death can start again from there */
+internal class Checkpoint(
+    val songMs: Long, val y: Float, val vy: Float, val grounded: Boolean,
+    val ship: Boolean, val flipped: Boolean, val wave: Boolean, val ball: Boolean, val ufo: Boolean,
+)
+
 /** what happened in a [GeometryWorld.step] */
 internal enum class StepResult { NONE, JUMPED, LANDED, DIED }
 
@@ -141,6 +147,16 @@ internal class GeometryWorld {
     /** a ufo: every tap is a small hop */
     var ufo = false
     val obstacles = ArrayList<Obstacle>()
+
+    fun checkpoint(songMs: Long) = Checkpoint(songMs, y, vy, grounded, ship, flipped, wave, ball, ufo)
+
+    /** puts the cube back as it was at [c], alive again, with nothing in front of it yet (the level is handed in again) */
+    fun restore(c: Checkpoint) {
+        y = c.y; vy = c.vy; grounded = c.grounded
+        ship = c.ship; flipped = c.flipped; wave = c.wave; ball = c.ball; ufo = c.ufo
+        rotation = 0f; alive = true; held = false
+        obstacles.clear()
+    }
 
     fun reset() {
         x = 0f; y = 0f; vy = 0f; grounded = true; rotation = 0f; alive = true; held = false; ship = false; flipped = false; wave = false; ball = false; ufo = false
@@ -242,9 +258,9 @@ internal class GeometryWorld {
                     val low = if (up) oy + SpikeBottom else oy + 1f - SpikeTop
                     val high = if (up) oy + SpikeTop else oy + 1f - SpikeBottom
                     // the wave is a small thing: only its middle can be hurt
-                    val halfWidth = if (wave) WaveHalf else 0.5f
-                    val bottom = if (wave) y + 0.5f - WaveHalf else y
-                    val topEdge = if (wave) y + 0.5f + WaveHalf else y + 1f
+                    val halfWidth = if (wave) WaveHalf else 0.42f
+                    val bottom = if (wave) y + 0.5f - WaveHalf else y + 0.08f
+                    val topEdge = if (wave) y + 0.5f + WaveHalf else y + 0.92f
                     if (abs(x - centre) < halfWidth + SpikeHalfWidth && bottom < high && topEdge > low) return die()
                 }
                 Kind.BLOCK -> {
@@ -259,7 +275,7 @@ internal class GeometryWorld {
                             // the ship's nose under a hanging block slides along it
                             y = oy - 1f; vy = 0f
                         } else {
-                            val inner = x + 0.15f > o.x && x - 0.15f < o.x + o.w && y + 0.65f > oy && y + 0.35f < top
+                            val inner = x + 0.12f > o.x && x - 0.12f < o.x + o.w && y + 0.62f > oy && y + 0.38f < top
                             if (inner) return die()
                         }
                     }
@@ -311,10 +327,11 @@ internal class GeometryWorld {
     }
 
     companion object {
-        const val SpikeHalfWidth = 0.125f
-        const val SpikeBottom = 0.08f
-        const val SpikeTop = 0.52f
-        const val LandTolerance = 0.30f
+        // generous on purpose: a spike only hurts where it really is, and a landing that is a little late still counts
+        const val SpikeHalfWidth = 0.10f
+        const val SpikeBottom = 0.10f
+        const val SpikeTop = 0.46f
+        const val LandTolerance = 0.40f
         const val WaveHalf = 0.2f
     }
 }
@@ -480,6 +497,12 @@ internal class GeometryDirector(private val songKey: String) {
     /** a new attempt: the level kept, the world's start over */
     fun restartRun() { spawned = 0 }
 
+    /** a new attempt from [songMs] (a checkpoint): the patterns that arrive from there on are met again */
+    fun rewindTo(songMs: Long) {
+        val first = specs.indexOfFirst { it.arrivalMs >= songMs }
+        spawned = if (first < 0) specs.size else first
+    }
+
     fun onKick(songMs: Long) = grid.onKick(songMs)
 
     /**
@@ -505,8 +528,9 @@ internal class GeometryDirector(private val songKey: String) {
             if (beatT == Long.MIN_VALUE) beatX = 0f else beatX += (t - beatT) / period * BeatBlocks
             beatT = t
             val counter = beatCounter++
-            val density = if (hard) 0.5f + 0.35f * min(1f, (t - IntroMs) / 40_000f) else 0.9f
-            val everyOther = !hard && counter % 2 != 0
+            // easy going: fewer patterns, and a hard song starts out with one every other beat
+            val density = if (hard) 0.35f + 0.25f * min(1f, (t - IntroMs) / 60_000f) else 0.75f
+            val everyOther = (!hard || t < IntroMs + 25_000L) && counter % 2 != 0
             val random = Random(songKey.hashCode() * 31 + counter * 7919)
             if (!calm && !everyOther && random.nextFloat() < density) {
                 val anchor = beatX + Gd.TakeoffBlocks
@@ -520,7 +544,7 @@ internal class GeometryDirector(private val songKey: String) {
                 } else if (inFlip) {
                     if (flipLeft <= 0) forced = Pattern.PORTAL_UNFLIP
                     else { pool = Pattern.entries.filter { !it.ship && !it.isPortal && it.section == 0 && it.flippable && (hard || !it.hard) }; mirrored = true }
-                } else if (cubeSince >= (if (hard) 6 else 9) && t < end - 14_000L && random.nextFloat() < 0.35f) {
+                } else if (cubeSince >= (if (hard) 8 else 10) && t < end - 14_000L && random.nextFloat() < 0.22f) {
                     forced = when (random.nextInt(5)) {
                         0 -> Pattern.PORTAL_IN
                         1 -> Pattern.PORTAL_WAVE
@@ -587,7 +611,7 @@ internal class GeometryDirector(private val songKey: String) {
     }
 
     companion object {
-        const val IntroMs = 5000L
+        const val IntroMs = 8000L
         const val OutroMs = 4000L
         const val HorizonMs = 3200L
         const val FallbackAfterMs = 4000L

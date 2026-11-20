@@ -307,4 +307,30 @@ class GeometryGameTest {
             }
         }
     }
+
+    @Test fun aCheckpointPutsTheCubeBackAliveAndTheLevelIsHandedInAgain() {
+        val world = GeometryWorld()
+        world.obstacles.add(Obstacle(Kind.SPIKE, 8f, 0f, 1f, 1f))
+        run(world, 4f) { false }
+        val saved = world.checkpoint(4000L)
+        run(world, 14f) { false }
+        assertFalse(world.alive)
+        world.restore(saved)
+        assertTrue(world.alive)
+        assertTrue(world.obstacles.isEmpty())
+        assertEquals(saved.y, world.y, 0.001f)
+
+        val director = GeometryDirector("cp")
+        director.specs.add(Spec(5000L, Pattern.SPIKE))
+        director.specs.add(Spec(9000L, Pattern.DOUBLE))
+        director.specs.add(Spec(14000L, Pattern.BLOCK))
+        director.spawnDue(world, 0L, 20_000L, 1f)
+        val everything = world.obstacles.size
+        world.obstacles.clear()
+        director.rewindTo(9000L)
+        director.spawnDue(world, 8000L, 20_000L, 1f)
+        // the spike at 5s is behind; the double spike and the block (3 pieces) come again
+        assertEquals(3, world.obstacles.size)
+        assertTrue(everything > world.obstacles.size)
+    }
 }

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,6 +39,9 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -78,6 +82,9 @@ import com.vantra.music.ui.player.styles.rememberStyleTrack
 import com.vantra.music.ui.player.styles.turnFit
 import com.vantra.music.ui.player.terminal.BeatSource
 import com.vantra.music.ui.player.terminal.ImmersiveWhileLandscape
+import com.vantra.music.ui.player.terminal.PhonkChunk
+import com.vantra.music.ui.player.terminal.PhonkChunker
+import com.vantra.music.ui.player.terminal.PhonkTimeline
 import com.vantra.music.ui.player.terminal.TerminalPlayClock
 import com.vantra.music.ui.player.terminal.TerminalSynchronization
 import com.vantra.music.ui.player.terminal.terminalInsets
@@ -124,6 +131,9 @@ private class GeometryRuntime {
     var hit = 0f
     /** 0 as a cube, 1 as a ship: the roof slides in and out with it */
     var shipFade = 0f
+    /** practice mode: where to start again after a death, and when one was last saved */
+    var checkpoint: Checkpoint? = null
+    var lastCheckpointMs = -100000L
     /** where the wave has just been, a ring of x and y pairs */
     val waveTrail = FloatArray(96)
     var waveHead = 0
@@ -132,6 +142,12 @@ private class GeometryRuntime {
     var hardEvery = 0
     val particles = ArrayList<Particle>()
     var lyricIndex = -1
+    /** the lyrics cut into short phrases, the way the Phonk style shows them, and which one is up */
+    val timeline = PhonkTimeline()
+    var chunks: List<PhonkChunk> = emptyList()
+    var lastChunks: List<PhonkChunk>? = null
+    /** a ring that leaves the cube on every kick: 0 to 1 while it grows, -1 when none */
+    var ring = -1f
     var lyricLayout: TextLayoutResult? = null
     var lyricLayoutKey = ""
 
@@ -183,6 +199,8 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
     val setBestNow by rememberUpdatedState(setBestRaw)
     val durationNow by rememberUpdatedState(duration)
     val linesNow by rememberUpdatedState(lyrics.lines)
+    val chunks = remember(lyrics.lines) { PhonkChunker.chunks(lyrics.lines) }
+    val chunksNow by rememberUpdatedState(chunks)
     val lyricsIdNow by rememberUpdatedState(lyrics.mediaId)
     val titleNow by rememberUpdatedState(track)
 
@@ -190,6 +208,8 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
     val frame = remember { mutableLongStateOf(0L) }
     var overlay by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var practice by remember { mutableStateOf(false) }
+    val practiceNow by rememberUpdatedState(practice)
     val showing = rememberStyleShowing()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val activePlayer = connection?.service?.playerFlow?.collectAsState()?.value ?: connection?.player
@@ -287,7 +307,9 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                                     s.director.onKick(songMs)
                                     s.kickPulse = max(s.kickPulse, kick)
                                     s.shake = max(s.shake, kick * 0.7f)
+                                    s.ring = 0f
                                 }
+                                if (s.ring >= 0f) { s.ring += stepDt * 2.2f; if (s.ring > 1f) s.ring = -1f }
                                 s.kickPulse = max(0f, s.kickPulse - stepDt * 2.6f)
                                 s.shake = max(0f, s.shake - stepDt * 5f)
                                 s.hit = max(0f, s.hit - stepDt * 2.2f)
@@ -316,7 +338,7 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                                                 s.shake = 1f
                                                 s.burst(26, true)
                                                 val percent = if (durationNow > 0) (songMs * 100 / durationNow).toInt() else 0
-                                                if (percent > s.bestPercent) {
+                                                if (!practiceNow && percent > s.bestPercent) {
                                                     s.bestPercent = percent
                                                     s.mediaId?.let { setBestNow(GeometryBest.put(bestRawNow, it, percent)) }
                                                 }
@@ -338,24 +360,43 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
 
                                 // after a moment the cube starts over from the beginning of the song
                                 if (!world.alive && s.timeS - s.deadAtS > 0.75f) {
-                                    s.attempt++
-                                    s.reset()
-                                    s.scale.reset()
-                                    player.seekTo(0)
+                                    val saved = s.checkpoint
+                                    if (practiceNow && saved != null) {
+                                        // practice: back to the last checkpoint, the song with it
+                                        world.restore(saved)
+                                        s.accumulator = 0f
+                                        s.deadAtS = -10f
+                                        s.particles.clear()
+                                        s.director.rewindTo(saved.songMs)
+                                        player.seekTo(saved.songMs)
+                                    } else {
+                                        s.attempt++
+                                        s.reset()
+                                        s.scale.reset()
+                                        player.seekTo(0)
+                                    }
                                     if (!player.isPlaying) player.play()
+                                }
+                                // practice mode saves a checkpoint every few seconds while the cube is somewhere safe
+                                if (practiceNow && world.alive && isPlaying && songMs - s.lastCheckpointMs >= 7000 &&
+                                    (world.grounded || world.ship || world.wave || world.ufo)) {
+                                    s.checkpoint = world.checkpoint(songMs)
+                                    s.lastCheckpointMs = songMs
                                 }
 
                                 // the end of the song, still alive: a win
                                 if (world.alive && !s.won && durationNow > 0 && songMs >= durationNow - 700) {
                                     s.won = true
                                     s.winAtS = s.timeS
-                                    val result = GeometryRewards.win(hard, streakNow, easyNow)
-                                    setStreakNow(result.streak)
-                                    setEasyNow(result.easyWins)
+                                    val result = if (practiceNow) GeometryRewards.Result(streakNow, easyNow, false)
+                                        else GeometryRewards.win(hard, streakNow, easyNow).also { setStreakNow(it.streak); setEasyNow(it.easyWins) }
                                     s.burst(40, false)
-                                    s.bestPercent = 100
-                                    s.mediaId?.let { setBestNow(GeometryBest.put(bestRawNow, it, 100)) }
-                                    overlay = if (result.gained) "LEVEL COMPLETE\n🔥 ${result.streak}"
+                                    if (!practiceNow) {
+                                        s.bestPercent = 100
+                                        s.mediaId?.let { setBestNow(GeometryBest.put(bestRawNow, it, 100)) }
+                                    }
+                                    overlay = if (practiceNow) "PRACTICE COMPLETE"
+                                    else if (result.gained) "LEVEL COMPLETE\n🔥 ${result.streak}"
                                     else "LEVEL COMPLETE\nwin once more for 🔥"
                                 }
                                 if (s.won && s.timeS - s.winAtS > OverlayMs / 1000f) overlay = null
@@ -379,9 +420,14 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                                     if (p.y < 0f) { p.y = 0f; p.vy = -p.vy * 0.4f }
                                     if (p.life <= 0f) s.particles.removeAt(i) else i++
                                 }
-                                // the wall's line: the last lyric that has begun
-                                val lines = if (lyricsIdNow != null) linesNow else emptyList()
-                                s.lyricIndex = lineAt(lines, songMs + conn.lyricsOffsetMs.value.toLong())
+                                // the lyric on the wall: short phrases, each landing on a kick, like the Phonk style
+                                val list = chunksNow
+                                val hasLyrics = list.isNotEmpty() && lyricsIdNow != null && lyricsIdNow == mediaId
+                                val visible = if (hasLyrics) list else emptyList()
+                                val lyricMs = songMs + conn.lyricsOffsetMs.value.toLong()
+                                s.timeline.step(visible, lyricMs, stepDt, kick > 0f, s.sync.timelineJump || visible !== s.lastChunks)
+                                s.lastChunks = visible
+                                s.chunks = visible
                                 frame.longValue = now
                             }
                         }
@@ -443,6 +489,20 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                     Modifier.align(Alignment.TopEnd).padding(end = insets.end + 12.dp, top = if (landscape) 8.dp else insets.top + 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Text(
+                        if (practice) "PRACTICE ✓" else "PRACTICE",
+                        Modifier
+                            .clickable {
+                                practice = !practice
+                                // a new mode starts without an old checkpoint
+                                game.checkpoint = null
+                                game.lastCheckpointMs = -100000L
+                            }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        color = Color.White.copy(alpha = if (practice) 0.95f else 0.6f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                     IconButton(onClick = { connection?.togglePlayPause() }, modifier = Modifier.size(44.dp)) {
                         Icon(painterResource(if (playing) R.drawable.pause else R.drawable.play), if (playing) "Pause" else "Play",
                             tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(22.dp))
@@ -514,54 +574,72 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
     fun sx(wx: Float) = playerX + (wx - world.x) * unit
     fun sy(wy: Float) = groundY - wy * unit
 
+    val accentA = hsv(hue, 0.85f, 1f)
+    val accentB = hsv(hue + 140f, 0.9f, 1f)
+    val accentC = hsv(hue + 60f, 0.85f, 1f)
+    val ink = hsv(hue + 20f, 0.8f, 0.08f)
+
     translate(left = (sin(g.timeS * 91f)) * g.shake * unit * 0.12f, top = (cos(g.timeS * 77f)) * g.shake * unit * 0.12f) {
-        // the wall
-        drawRect(Brush.verticalGradient(listOf(hsv(hue, 0.7f, 0.30f + 0.12f * pulse), hsv(hue + 35f, 0.8f, 0.62f + 0.14f * pulse)),
+        // the wall: nearly black, a glow rising from the horizon that swells on every kick
+        drawRect(Brush.verticalGradient(listOf(hsv(hue + 20f, 0.8f, 0.04f + 0.03f * pulse), hsv(hue + 40f, 0.9f, 0.14f + 0.08f * pulse)),
             startY = 0f, endY = groundY), size = Size(w, groundY))
-        // big shapes drifting slowly behind, the way the genre's walls scroll
-        for (i in 0 until 7) {
-            val span = unit * 14f
-            val x = ((i * unit * 5.3f - world.x * unit * 0.22f) % span + span) % span - unit * 3f
-            val side = unit * (2.2f + (i % 3) * 1.3f)
-            drawRect(Color.White.copy(alpha = 0.035f + 0.04f * pulse), Offset(x, groundY - side - (i % 4) * unit * 1.6f), Size(side, side), style = Stroke(unit * 0.07f))
+        drawRect(Brush.radialGradient(listOf(accentA.copy(alpha = 0.30f + 0.30f * pulse), Color.Transparent), center = Offset(w * 0.5f, groundY), radius = w * 0.75f),
+            size = Size(w, groundY), blendMode = BlendMode.Plus)
+        // columns of light that drift past and flare with the beat
+        for (i in 0 until 6) {
+            val span = unit * 18f
+            val x = ((i * unit * 3.7f - world.x * unit * 0.12f) % span + span) % span - unit * 2f
+            val bw = unit * (0.5f + (i % 3) * 0.4f)
+            val strength = 0.05f + (if (i % 2 == 0) 0.16f else 0.08f) * pulse
+            drawRect(Brush.verticalGradient(listOf(Color.Transparent, (if (i % 2 == 0) accentB else accentA).copy(alpha = strength)), startY = 0f, endY = groundY),
+                Offset(x, 0f), Size(bw, groundY), blendMode = BlendMode.Plus)
         }
-        // the lyric, written on the wall
-        val idx = g.lyricIndex
-        if (idx in lines.indices) {
-            val text = lines[idx].text
-            val key = "$idx|${w.toInt()}"
-            if (g.lyricLayoutKey != key || g.lyricLayout == null) {
-                g.lyricLayoutKey = key
-                g.lyricLayout = textMeasurer.measure(
-                    text, TextStyle(fontSize = (unit * 1.05f).toSp(), fontWeight = FontWeight.Black, textAlign = TextAlign.Center, lineHeight = (unit * 1.15f).toSp()),
-                    overflow = TextOverflow.Ellipsis, maxLines = 3, constraints = Constraints(maxWidth = (w * 0.84f).toInt()),
-                )
-            }
-            g.lyricLayout?.let { layout ->
-                val tx = (w - layout.size.width) / 2f - (world.x * unit * 0.04f) % (unit * 0.4f)
-                val ty = (groundY - layout.size.height) / 2f - unit * 0.3f
-                drawText(layout, color = Color.White.copy(alpha = 0.13f + 0.20f * pulse), topLeft = Offset(tx, ty))
+        // neon shapes drifting at different depths, flashing on the beat
+        for (i in 0 until 9) {
+            val depth = 0.10f + (i % 3) * 0.09f
+            val span = unit * 22f
+            val x = ((i * unit * 4.1f - world.x * unit * depth) % span + span) % span - unit * 3f
+            val side = unit * (1.3f + (i % 4) * 0.8f)
+            val y = groundY - unit * (1.4f + (i * 1.37f) % 5.5f) - side * 0.5f
+            val colour = when (i % 3) { 0 -> accentA; 1 -> accentB; else -> accentC }
+            val fade = 0.20f + 0.45f * pulse
+            when (i % 3) {
+                0 -> glowRect(Offset(x, y), Size(side, side), colour, unit, fade)
+                1 -> glowCircle(Offset(x + side / 2f, y + side / 2f), side / 2f, colour, unit, fade)
+                else -> {
+                    spikePath.reset()
+                    spikePath.moveTo(x, y + side)
+                    spikePath.lineTo(x + side, y + side)
+                    spikePath.lineTo(x + side / 2f, y)
+                    spikePath.close()
+                    glowPath(spikePath, colour, unit, fade)
+                }
             }
         }
-        // slow motion: a soft vignette and a violet wash
+
+        // the lyric, set the way the Phonk style sets it: a phrase at a time, landing on the kick
+        drawLyric(g, textMeasurer, w, groundY, unit, accentA, pulse)
+
+        // slow motion: a violet wash
         if (slow > 0.05f) drawRect(Color(0xFF3A1B6E).copy(alpha = slow * 0.5f), size = Size(w, h))
 
-        // the ground
-        drawRect(hsv(hue + 10f, 0.8f, 0.16f), Offset(0f, groundY), Size(w, h - groundY))
+        // the ground: a dark slab, a faint grid sliding by, a neon line that flares on the kick
+        drawRect(Brush.verticalGradient(listOf(hsv(hue + 20f, 0.8f, 0.10f), Color.Black), startY = groundY, endY = h), Offset(0f, groundY), Size(w, h - groundY))
         val tile = unit * 2f
         val off = (world.x * unit) % tile
         var gx = -off
         while (gx < w) {
-            drawLine(Color.White.copy(alpha = 0.07f), Offset(gx, groundY), Offset(gx, h), unit * 0.04f)
+            drawLine(accentA.copy(alpha = 0.10f + 0.10f * pulse), Offset(gx, groundY), Offset(gx - unit * 0.6f, h), unit * 0.03f, blendMode = BlendMode.Plus)
             gx += tile
         }
-        drawRect(Color.White.copy(alpha = 0.85f), Offset(0f, groundY - unit * 0.05f), Size(w, unit * 0.1f + unit * 0.12f * pulse))
+        for (k in 1..2) drawLine(accentA.copy(alpha = 0.08f), Offset(0f, groundY + unit * 0.7f * k), Offset(w, groundY + unit * 0.7f * k), unit * 0.03f, blendMode = BlendMode.Plus)
+        glowLine(Offset(0f, groundY), Offset(w, groundY), accentA, unit * 0.07f * (1f + 0.5f * pulse), 1f + pulse)
         // the ship flies between a floor and a roof; the roof slides down from the top as it turns into one
         if (g.shipFade > 0.01f) {
             val roof = sy(Gd.Ceiling)
             val slide = (1f - g.shipFade) * (roof + unit * 2f)
-            drawRect(hsv(hue + 10f, 0.8f, 0.16f), Offset(0f, -unit * 3f - slide), Size(w, roof + unit * 3f))
-            drawRect(Color.White.copy(alpha = 0.85f), Offset(0f, roof - slide - unit * 0.05f), Size(w, unit * 0.1f + unit * 0.12f * pulse))
+            drawRect(ink, Offset(0f, -unit * 3f - slide), Size(w, roof + unit * 3f))
+            glowLine(Offset(0f, roof - slide), Offset(w, roof - slide), accentB, unit * 0.07f * (1f + 0.5f * pulse), 1f + pulse)
         }
 
         // "Attempt N" slides by at the start of a run
@@ -582,19 +660,19 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
                     spikePath.lineTo(x0 + unit, y1)
                     spikePath.lineTo(x0 + unit / 2f, y1 - unit)
                     spikePath.close()
-                    drawPath(spikePath, Color.Black)
-                    drawPath(spikePath, Color.White.copy(alpha = 0.9f), style = Stroke(unit * 0.07f))
+                    drawPath(spikePath, ink)
+                    glowPath(spikePath, accentB, unit)
                 }
                 Kind.BLOCK -> {
                     val top = sy(o.y + o.h)
-                    drawRect(hsv(hue + 20f, 0.7f, 0.12f), Offset(x0, top), Size(o.w * unit, o.h * unit))
-                    drawRect(Color.White.copy(alpha = 0.9f), Offset(x0, top), Size(o.w * unit, o.h * unit), style = Stroke(unit * 0.07f))
+                    drawRect(ink, Offset(x0, top), Size(o.w * unit, o.h * unit))
+                    glowRect(Offset(x0, top), Size(o.w * unit, o.h * unit), accentA, unit)
                     // the inner panels, a square per block
                     var bx = 0
                     while (bx < o.w.toInt()) {
                         var by = 0
                         while (by < o.h.toInt()) {
-                            drawRect(Color.White.copy(alpha = 0.22f), Offset(x0 + (bx + 0.18f) * unit, top + (by + 0.18f) * unit), Size(unit * 0.64f, unit * 0.64f), style = Stroke(unit * 0.04f))
+                            drawRect(accentA.copy(alpha = 0.28f), Offset(x0 + (bx + 0.18f) * unit, top + (by + 0.18f) * unit), Size(unit * 0.64f, unit * 0.64f), style = Stroke(unit * 0.04f))
                             by++
                         }
                         bx++
@@ -607,8 +685,8 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
                     spikePath.lineTo(x0 + unit, y2)
                     spikePath.lineTo(x0 + unit / 2f, y2 + unit)
                     spikePath.close()
-                    drawPath(spikePath, Color.Black)
-                    drawPath(spikePath, Color.White.copy(alpha = 0.9f), style = Stroke(unit * 0.07f))
+                    drawPath(spikePath, ink)
+                    glowPath(spikePath, accentB, unit)
                 }
                 Kind.PORTAL_SHIP, Kind.PORTAL_CUBE, Kind.PORTAL_FLIP, Kind.PORTAL_UNFLIP, Kind.PORTAL_WAVE, Kind.PORTAL_BALL, Kind.PORTAL_UFO -> {
                     // a tall beam across the whole level: pink turns the cube into a ship, cyan gives the cube back,
@@ -655,6 +733,12 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
         }
 
         // the cube
+        if (world.alive) {
+            // a soft bloom around whatever the player is, brighter on the kick
+            val bloom = Offset(playerX, sy(world.y + 0.5f))
+            drawCircle(Brush.radialGradient(listOf(accentA.copy(alpha = 0.45f + 0.25f * pulse), Color.Transparent), center = bloom, radius = unit * 1.8f),
+                unit * 1.8f, bloom, blendMode = BlendMode.Plus)
+        }
         if (world.alive && world.ball) {
             // the ball: a round body with spokes, rolling along whichever side it is on
             val cx = playerX
@@ -734,6 +818,13 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
             }
         }
 
+        // the kick leaves the player as a ring
+        if (g.ring >= 0f && world.alive) {
+            val centre = Offset(playerX, sy(world.y + 0.5f))
+            drawCircle(accentA.copy(alpha = (1f - g.ring) * 0.55f), unit * (0.8f + g.ring * 6f), centre,
+                style = Stroke(unit * 0.10f * (1f - g.ring) + 1f), blendMode = BlendMode.Plus)
+        }
+
         // progress: a bar across the top with the percentage
         if (!preview && durationMs > 0) {
             val fraction = (g.songMs.toFloat() / durationMs).coerceIn(0f, 1f)
@@ -752,4 +843,74 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
     }
     // the cube breaking: the whole picture flashes white and fades
     if (g.hit > 0.01f) drawRect(Color.White.copy(alpha = g.hit * 0.55f), size = Size(w, h))
+}
+
+// ---- neon: a thing drawn as a faint wide halo, a brighter close one, a bright line and a white core ----
+
+private fun DrawScope.glowRect(topLeft: Offset, size: Size, colour: Color, unit: Float, fade: Float = 1f) {
+    drawRect(colour.copy(alpha = 0.10f * fade), topLeft, size, style = Stroke(unit * 0.40f), blendMode = BlendMode.Plus)
+    drawRect(colour.copy(alpha = 0.22f * fade), topLeft, size, style = Stroke(unit * 0.22f), blendMode = BlendMode.Plus)
+    drawRect(colour.copy(alpha = 0.95f * fade), topLeft, size, style = Stroke(unit * 0.07f))
+    drawRect(Color.White.copy(alpha = 0.75f * fade), topLeft, size, style = Stroke(unit * 0.025f))
+}
+
+private fun DrawScope.glowCircle(centre: Offset, radius: Float, colour: Color, unit: Float, fade: Float = 1f) {
+    drawCircle(colour.copy(alpha = 0.10f * fade), radius, centre, style = Stroke(unit * 0.40f), blendMode = BlendMode.Plus)
+    drawCircle(colour.copy(alpha = 0.22f * fade), radius, centre, style = Stroke(unit * 0.22f), blendMode = BlendMode.Plus)
+    drawCircle(colour.copy(alpha = 0.95f * fade), radius, centre, style = Stroke(unit * 0.07f))
+    drawCircle(Color.White.copy(alpha = 0.75f * fade), radius, centre, style = Stroke(unit * 0.025f))
+}
+
+private fun DrawScope.glowPath(path: Path, colour: Color, unit: Float, fade: Float = 1f) {
+    drawPath(path, colour.copy(alpha = 0.10f * fade), style = Stroke(unit * 0.40f), blendMode = BlendMode.Plus)
+    drawPath(path, colour.copy(alpha = 0.22f * fade), style = Stroke(unit * 0.22f), blendMode = BlendMode.Plus)
+    drawPath(path, colour.copy(alpha = 0.95f * fade), style = Stroke(unit * 0.07f))
+    drawPath(path, Color.White.copy(alpha = 0.75f * fade), style = Stroke(unit * 0.025f))
+}
+
+private fun DrawScope.glowLine(a: Offset, b: Offset, colour: Color, width: Float, strength: Float = 1f) {
+    drawLine(colour.copy(alpha = (0.12f * strength).coerceAtMost(1f)), a, b, width * 5f, blendMode = BlendMode.Plus)
+    drawLine(colour.copy(alpha = (0.25f * strength).coerceAtMost(1f)), a, b, width * 2.5f, blendMode = BlendMode.Plus)
+    drawLine(colour.copy(alpha = 0.95f), a, b, width)
+    drawLine(Color.White.copy(alpha = 0.8f), a, b, width * 0.35f)
+}
+
+/**
+ * The phrase being sung, big on the wall behind the level like the Phonk style's words: it lands from a
+ * little smaller on the first frames of its time, swells and brightens on every kick, leans a different
+ * way for every phrase, and glows in the colour of the song.
+ */
+private fun DrawScope.drawLyric(g: GeometryRuntime, textMeasurer: TextMeasurer, w: Float, groundY: Float, unit: Float, accent: Color, pulse: Float) {
+    val chunk = g.chunks.getOrNull(g.timeline.index) ?: return
+    val age = g.timeline.age
+    val rest = 1f - min(1f, age / 0.13f)
+    val land = 1f - rest * rest * rest
+    val text = chunk.words.joinToString(" ")
+    val key = "${chunk.id}|${w.toInt()}|${unit.toInt()}"
+    if (g.lyricLayoutKey != key || g.lyricLayout == null) {
+        g.lyricLayoutKey = key
+        val size = if (text.length <= 9) unit * 2.7f else if (text.length <= 18) unit * 2.1f else unit * 1.5f
+        g.lyricLayout = textMeasurer.measure(
+            text,
+            TextStyle(fontSize = size.toSp(), fontWeight = FontWeight.Black, textAlign = TextAlign.Center, lineHeight = (size * 1.05f).toSp()),
+            overflow = TextOverflow.Clip, maxLines = 3, constraints = Constraints(maxWidth = (w * 0.86f).toInt()),
+        )
+    }
+    val layout = g.lyricLayout ?: return
+    val cx = w / 2f
+    val cy = groundY * 0.46f
+    val pivot = Offset(cx, cy)
+    val tilt = ((chunk.id * 37) % 9 - 4) * 1.1f
+    val grow = (0.86f + 0.14f * land) * (1f + 0.09f * pulse)
+    val topLeft = Offset(cx - layout.size.width / 2f, cy - layout.size.height / 2f)
+    val alpha = (0.45f + 0.45f * pulse + 0.25f * rest).coerceIn(0f, 1f)
+    val off = unit * 0.07f * (0.5f + pulse)
+    rotate(tilt, pivot) {
+        scale(grow, grow, pivot) {
+            // the glow: the same words in the song's colour, a little to each side
+            drawText(layout, color = accent.copy(alpha = alpha * 0.45f), topLeft = topLeft + Offset(-off, 0f))
+            drawText(layout, color = accent.copy(alpha = alpha * 0.45f), topLeft = topLeft + Offset(off, 0f))
+            drawText(layout, color = lerp(Color.White, accent, 0.5f * pulse).copy(alpha = alpha), topLeft = topLeft)
+        }
+    }
 }

@@ -42,4 +42,11 @@ A rhythm platformer built out of the song that is playing, picked from the playe
 - Five section kinds now (ship, wave, ufo, ball, gravity), picked at random after 6 (hard) / 9 (calm) cube patterns.
 - Playability now searches one decision at a time over every place the cube could be, merging only states at the same distance. The old depth-first search with a coarse distance key could throw away a perfectly good path in modes where the cube sits still (a ship held against the roof), so some good patterns were refused.
 
-Next stages: speed portals, practice mode with checkpoints, more effects.
+## Stage 7: practice mode, easier, neon
+
+- PRACTICE button (top right): a checkpoint is saved every ~7 s while the cube is somewhere safe; a death starts again from the last one (song and level with it) instead of from the beginning. No streak, no best percentage in practice.
+- Easier: spikes only hurt where they really are (narrower hitbox, the cube's corners are forgiven), late landings count, fewer patterns (a hard song starts with one every other beat for 25 s, calm songs 75% of the time), 8 s of calm at the start, sections rarer (22%).
+- Neon look: nearly black wall with a glow from the horizon that swells on every kick, columns of light, drifting glowing shapes, a glowing ground line, magenta neon spikes, cyan neon blocks, a bloom around the player and a ring that leaves it on every kick (additive blending for the glow).
+- Lyrics are set like the Phonk style: short phrases (PhonkChunker / PhonkTimeline), each landing on a kick, swelling and brightening on every beat, leaning a different way per phrase, with a glow in the song's colour.
+
+Next stages: speed portals, more effects.
