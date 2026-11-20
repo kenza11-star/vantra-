@@ -37,10 +37,17 @@ internal object Gd {
     const val ShipMax = 10f
     /** the roof of the level: the ship (and a cube that has flown up) stop under it */
     const val Ceiling = 7f
+    /** the ball falls a little slower than a cube; a tap on a floor or roof sends it to the other one */
+    const val BallGravity = 91.98f
+    /** the ufo: a gentle fall, and every tap, in the air too, throws it up a little */
+    const val UfoGravity = 70f
+    const val UfoJump = 14f
+    const val UfoMaxUp = 14f
+    const val UfoMaxDown = 12f
 }
 
 /** what a piece of a level is */
-internal enum class Kind { SPIKE, SPIKE_DOWN, BLOCK, PAD, ORB, PORTAL_SHIP, PORTAL_CUBE, PORTAL_FLIP, PORTAL_UNFLIP, PORTAL_WAVE }
+internal enum class Kind { SPIKE, SPIKE_DOWN, BLOCK, PAD, ORB, PORTAL_SHIP, PORTAL_CUBE, PORTAL_FLIP, PORTAL_UNFLIP, PORTAL_WAVE, PORTAL_BALL, PORTAL_UFO }
 
 /** one piece of a pattern, [dx] blocks to the right of where the pattern is anchored */
 internal class Cell(val kind: Kind, val dx: Float, val y: Float, val w: Float, val h: Float)
@@ -81,11 +88,22 @@ internal enum class Pattern(val hard: Boolean, val ship: Boolean, vararg val cel
     GATE_SPIKES(false, true, Cell(Kind.SPIKE, 0f, 0f, 1f, 1f), Cell(Kind.SPIKE, 1f, 0f, 1f, 1f), Cell(Kind.SPIKE, 2f, 0f, 1f, 1f),
         Cell(Kind.SPIKE_DOWN, 0f, 6f, 1f, 1f), Cell(Kind.SPIKE_DOWN, 1f, 6f, 1f, 1f), Cell(Kind.SPIKE_DOWN, 2f, 6f, 1f, 1f)),
     GATE_ZIG(true, true, Cell(Kind.BLOCK, 0f, 0f, 1f, 2f), Cell(Kind.BLOCK, 2.5f, 5f, 1f, 2f)),
-    GATE_SQUEEZE(true, true, Cell(Kind.BLOCK, 0f, 0f, 2f, 2f), Cell(Kind.BLOCK, 0f, 4f, 2f, 3f));
+    GATE_SQUEEZE(true, true, Cell(Kind.BLOCK, 0f, 0f, 2f, 2f), Cell(Kind.BLOCK, 0f, 4f, 2f, 3f)),
+    // the ufo: every tap, in the air too, is a small hop; it flies the same gates as the ship
+    PORTAL_UFO(false, false, Cell(Kind.PORTAL_UFO, 0f, 0f, 1f, Gd.Ceiling)),
+    // the ball: a tap sends it from the floor to the roof and back; these are what it has to change sides for
+    PORTAL_BALL(false, false, Cell(Kind.PORTAL_BALL, 0f, 0f, 1f, Gd.Ceiling)),
+    BALL_LOW(false, false, Cell(Kind.BLOCK, 0f, 0f, 1f, 3f)),
+    BALL_HIGH(false, false, Cell(Kind.BLOCK, 0f, 4f, 1f, 3f)),
+    BALL_SPIKES_FLOOR(false, false, Cell(Kind.SPIKE, 0f, 0f, 1f, 1f), Cell(Kind.SPIKE, 1f, 0f, 1f, 1f), Cell(Kind.SPIKE, 2f, 0f, 1f, 1f)),
+    BALL_SPIKES_ROOF(false, false, Cell(Kind.SPIKE_DOWN, 0f, 6f, 1f, 1f), Cell(Kind.SPIKE_DOWN, 1f, 6f, 1f, 1f), Cell(Kind.SPIKE_DOWN, 2f, 6f, 1f, 1f)),
+    BALL_ZIG(true, false, Cell(Kind.SPIKE, 0f, 0f, 1f, 1f), Cell(Kind.SPIKE_DOWN, 2.5f, 6f, 1f, 1f));
 
     /** the widest the pattern reaches to the right of its anchor */
     val reach: Float = cells.maxOf { it.dx + it.w }
-    val isPortal: Boolean = cells.any { it.kind == Kind.PORTAL_SHIP || it.kind == Kind.PORTAL_CUBE || it.kind == Kind.PORTAL_FLIP || it.kind == Kind.PORTAL_UNFLIP || it.kind == Kind.PORTAL_WAVE }
+    val isPortal: Boolean = cells.any { it.kind == Kind.PORTAL_SHIP || it.kind == Kind.PORTAL_CUBE || it.kind == Kind.PORTAL_FLIP || it.kind == Kind.PORTAL_UNFLIP || it.kind == Kind.PORTAL_WAVE || it.kind == Kind.PORTAL_BALL || it.kind == Kind.PORTAL_UFO }
+    /** 1 for the shapes of a ball section, 0 for everything else */
+    val section: Int = if (name.startsWith("BALL_")) 1 else 0
     /** made of spikes and blocks only, so it can be turned upside down for a gravity section */
     val flippable: Boolean = cells.all { it.kind == Kind.SPIKE || it.kind == Kind.BLOCK }
 }
@@ -118,10 +136,14 @@ internal class GeometryWorld {
     var flipped = false
     /** flying as a wave: straight up or straight down at the speed it runs at */
     var wave = false
+    /** a ball: it does not jump, a tap sends it to the other side */
+    var ball = false
+    /** a ufo: every tap is a small hop */
+    var ufo = false
     val obstacles = ArrayList<Obstacle>()
 
     fun reset() {
-        x = 0f; y = 0f; vy = 0f; grounded = true; rotation = 0f; alive = true; held = false; ship = false; flipped = false; wave = false
+        x = 0f; y = 0f; vy = 0f; grounded = true; rotation = 0f; alive = true; held = false; ship = false; flipped = false; wave = false; ball = false; ufo = false
         obstacles.clear()
     }
 
@@ -132,15 +154,22 @@ internal class GeometryWorld {
         val dt = Gd.Step
         val rising = press && !held
         held = press
+        // the ball changes sides on a fresh tap while it rolls on the floor or the roof
+        if (ball && rising && grounded) {
+            flipped = !flipped
+            grounded = false
+            vy = 0f
+        }
+        val flying = ship || ufo
         // a cube running on the roof is the same cube upside down: it is looked at in a mirror, the
         // level's pieces turned over with it
-        val mirror = flipped && !ship && !wave
+        val mirror = flipped && !flying && !wave
         if (mirror) { y = Gd.Ceiling - 1f - y; vy = -vy }
         fun unmirror() { if (mirror) { y = Gd.Ceiling - 1f - y; vy = -vy } }
         fun die(): StepResult { unmirror(); alive = false; return StepResult.DIED }
         var newFlip: Boolean? = null
         // pads and orbs act on where the cube is now (the ship ignores them)
-        if (!ship && !wave) for (o in obstacles) {
+        if (!flying && !wave && !ball) for (o in obstacles) {
             if (o.x > x + 2f || o.x + o.w < x - 2f) continue
             val oy = if (mirror) Gd.Ceiling - o.y - o.h else o.y
             if (o.kind == Kind.PAD) {
@@ -164,6 +193,16 @@ internal class GeometryWorld {
             grounded = false
             if (y <= 0f) { y = 0f; vy = 0f }
             if (y >= Gd.Ceiling - 1f) { y = Gd.Ceiling - 1f; vy = 0f }
+        } else if (ufo) {
+            // gravity pulls it down gently and every fresh tap throws it up
+            vy -= Gd.UfoGravity * dt
+            if (rising) vy = Gd.UfoJump
+            vy = vy.coerceIn(-Gd.UfoMaxDown, Gd.UfoMaxUp)
+            y += vy * dt
+            x += Gd.Speed * dt
+            grounded = false
+            if (y <= 0f) { y = 0f; vy = max(vy, 0f) }
+            if (y >= Gd.Ceiling - 1f) { y = Gd.Ceiling - 1f; vy = min(vy, 0f) }
         } else if (ship) {
             // a held finger pushes up, a lifted one lets it fall; the floor and the roof stop it without hurting
             vy += (if (press) Gd.ShipUp else -Gd.ShipDown) * dt
@@ -174,12 +213,12 @@ internal class GeometryWorld {
             if (y <= 0f) { y = 0f; vy = max(vy, 0f) }
             if (y >= Gd.Ceiling - 1f) { y = Gd.Ceiling - 1f; vy = min(vy, 0f) }
         } else {
-            if (grounded && press) {
+            if (grounded && press && !ball) {
                 vy = Gd.JumpVelocity
                 grounded = false
                 result = StepResult.JUMPED
             }
-            vy = max(vy - Gd.Gravity * dt, -Gd.TerminalVelocity)
+            vy = max(vy - (if (ball) Gd.BallGravity else Gd.Gravity) * dt, -Gd.TerminalVelocity)
             y += vy * dt
             x += Gd.Speed * dt
             wasGrounded = grounded
@@ -215,8 +254,8 @@ internal class GeometryWorld {
                         if (x + WaveHalf > o.x && x - WaveHalf < o.x + o.w && y + 0.5f + WaveHalf > oy && y + 0.5f - WaveHalf < top) return die()
                     } else if (outer) {
                         if (previousY >= top - LandTolerance && vy <= 0f) {
-                            y = top; vy = 0f; grounded = !ship
-                        } else if (ship && previousY + 1f <= oy + LandTolerance && vy >= 0f) {
+                            y = top; vy = 0f; grounded = !flying
+                        } else if (flying && previousY + 1f <= oy + LandTolerance && vy >= 0f) {
                             // the ship's nose under a hanging block slides along it
                             y = oy - 1f; vy = 0f
                         } else {
@@ -225,24 +264,29 @@ internal class GeometryWorld {
                         }
                     }
                 }
-                Kind.PORTAL_SHIP, Kind.PORTAL_CUBE, Kind.PORTAL_WAVE -> {
+                Kind.PORTAL_SHIP, Kind.PORTAL_CUBE, Kind.PORTAL_WAVE, Kind.PORTAL_BALL, Kind.PORTAL_UFO -> {
                     val centre = o.x + 0.5f
                     if (previousX < centre && centre <= x) {
                         ship = o.kind == Kind.PORTAL_SHIP
                         wave = o.kind == Kind.PORTAL_WAVE
+                        ball = o.kind == Kind.PORTAL_BALL
+                        ufo = o.kind == Kind.PORTAL_UFO
                         grounded = false
                         newFlip = false
                     }
                 }
                 Kind.PORTAL_FLIP, Kind.PORTAL_UNFLIP -> {
                     val centre = o.x + 0.5f
-                    if (previousX < centre && centre <= x && !ship && !wave) newFlip = o.kind == Kind.PORTAL_FLIP
+                    if (previousX < centre && centre <= x && !flying && !wave && !ball) newFlip = o.kind == Kind.PORTAL_FLIP
                 }
                 else -> Unit
             }
         }
-        if (ship || wave) {
+        if (flying || wave) {
             rotation = 0f
+        } else if (ball) {
+            // the ball rolls on whichever side it is on
+            rotation += 420f * dt * (if (flipped) -1f else 1f)
         } else if (grounded) {
             val target = round(rotation / 90f) * 90f
             rotation += (target - rotation) * min(1f, dt * 28f)
@@ -341,57 +385,65 @@ internal class BeatGrid {
 /**
  * Keeps track of where the cube can be once every pattern placed so far is behind it, and only lets a
  * new pattern in if the cube can still get through it from one of those places. That way a level is
- * always playable, however the patterns are chained, and the check is the game's own physics.
+ * always playable, however the patterns are chained, and the check is the game's own physics. The
+ * search goes one decision (four steps) at a time over every place the cube could be, merging the
+ * ones that are alike, so a state is never mistaken for one that is further along.
  */
 internal class Playability {
-    private class St(val x: Float, val y: Float, val vy: Float, val grounded: Boolean, val held: Boolean, val ship: Boolean, val flipped: Boolean, val wave: Boolean)
+    private class St(
+        val x: Float, val y: Float, val vy: Float, val grounded: Boolean, val held: Boolean,
+        val ship: Boolean, val flipped: Boolean, val wave: Boolean, val ball: Boolean, val ufo: Boolean,
+    )
 
-    private var states: List<St> = listOf(St(0f, 0f, 0f, true, false, false, false, false))
+    private var states: List<St> = listOf(St(0f, 0f, 0f, true, false, false, false, false, false, false))
     private val world = GeometryWorld()
+
+    private fun flags(s: St): Long =
+        (if (s.grounded) 1L else 0L) or (if (s.held) 2L else 0L) or (if (s.ship) 4L else 0L) or (if (s.flipped) 8L else 0L) or
+            (if (s.wave) 16L else 0L) or (if (s.ball) 32L else 0L) or (if (s.ufo) 64L else 0L)
+
+    /** two states are alike when they are at the same place, about the same height and speed, in the same mode */
+    private fun key(s: St): Long {
+        val coarse = s.ship || s.wave || s.ball || s.ufo
+        val x = (s.x * 10f).roundToInt().toLong() and 0xFFFFF
+        val y = (if (coarse) (s.y * 4f).roundToInt() else (s.y * 10f).roundToInt()).toLong() and 0xFF
+        val v = (if (coarse) (s.vy * 0.8f).roundToInt() + 64 else (s.vy * 2.5f).roundToInt() + 128).toLong() and 0x1FF
+        return (x shl 30) or (y shl 22) or (v shl 12) or flags(s)
+    }
+
+    private fun outKey(s: St): Long =
+        ((s.y * 2f).roundToInt().toLong() shl 20) or (((s.vy / 2f).roundToInt() + 64).toLong() shl 12) or flags(s)
 
     /** [cells] is the new pattern, in the level's own distance; [end] where the cube is counted as through it */
     fun tryAdd(cells: List<Obstacle>, end: Float): Boolean {
         world.obstacles.clear()
         world.obstacles.addAll(cells)
-        val seen = HashSet<Long>()
-        val out = HashMap<Long, St>()
-        val stack = ArrayList<St>(states)
         val orbs = cells.filter { it.kind == Kind.ORB }
-        var budget = 30_000
-        while (stack.isNotEmpty() && budget-- > 0) {
-            val s = stack.removeAt(stack.size - 1)
-            if (s.x >= end) {
-                val outKey = if (s.ship || s.wave) {
-                    ((s.y * 2f).roundToInt().toLong() shl 12) or ((s.vy / 2f).roundToInt() + 100).toLong() or (1L shl 32) or
-                        (if (s.held) 1L shl 31 else 0L)
-                } else {
-                    ((s.y * 4f).roundToInt().toLong() shl 12) or ((s.vy).roundToInt() + 100).toLong() or
-                        (if (s.grounded) 1L shl 30 else 0L) or (if (s.held) 1L shl 31 else 0L)
+        val out = HashMap<Long, St>()
+        var frontier: List<St> = states
+        var budget = 40_000
+        while (frontier.isNotEmpty() && budget > 0) {
+            val next = ArrayList<St>()
+            val seen = HashSet<Long>()
+            for (s in frontier) {
+                if (s.x >= end) { out[outKey(s)] = s; continue }
+                if (!seen.add(key(s))) continue
+                budget--
+                // in the air a tap only matters near an orb, or for a mode that answers to taps anywhere
+                val orbNear = orbs.any { abs(it.x + 0.5f - s.x) < 2.5f }
+                val options = if (s.grounded || orbNear || s.ship || s.wave || s.ufo) booleanArrayOf(true, false) else booleanArrayOf(false)
+                for (press in options) {
+                    world.x = s.x; world.y = s.y; world.vy = s.vy; world.grounded = s.grounded
+                    world.alive = true; world.rotation = 0f; world.held = s.held; world.ship = s.ship
+                    world.flipped = s.flipped; world.wave = s.wave; world.ball = s.ball; world.ufo = s.ufo
+                    var ok = true
+                    for (i in 0 until 4) {
+                        if (world.step(press, prune = false) == StepResult.DIED) { ok = false; break }
+                    }
+                    if (ok) next.add(St(world.x, world.y, world.vy, world.grounded, world.held, world.ship, world.flipped, world.wave, world.ball, world.ufo))
                 }
-                out[outKey or (if (s.flipped) 1L shl 33 else 0L) or (if (s.wave) 1L shl 34 else 0L)] = s
-                continue
             }
-            // the ship has far more places to be than a cube, so it is looked at more coarsely
-            val key = if (s.ship || s.wave) {
-                ((s.x * 3f).roundToInt().toLong() shl 22) or ((s.y * 4f).roundToInt().toLong() shl 12) or
-                    ((s.vy * 0.8f).roundToInt() + 200).toLong() or (if (s.held) 1L shl 51 else 0L) or (1L shl 52)
-            } else {
-                ((s.x * 6f).roundToInt().toLong() shl 22) or ((s.y * 10f).roundToInt().toLong() shl 12) or
-                    ((s.vy * 2.5f).roundToInt() + 200).toLong() or (if (s.grounded) 1L shl 50 else 0L) or (if (s.held) 1L shl 51 else 0L)
-            }
-            if (!seen.add(key or (if (s.flipped) 1L shl 53 else 0L) or (if (s.wave) 1L shl 54 else 0L))) continue
-            // in the air a tap only matters near an orb
-            val orbNear = orbs.any { abs(it.x + 0.5f - s.x) < 2.5f }
-            val options = if (s.grounded || orbNear || s.ship || s.wave) booleanArrayOf(true, false) else booleanArrayOf(false)
-            for (press in options) {
-                world.x = s.x; world.y = s.y; world.vy = s.vy; world.grounded = s.grounded
-                world.alive = true; world.rotation = 0f; world.held = s.held; world.ship = s.ship; world.flipped = s.flipped; world.wave = s.wave
-                var ok = true
-                for (i in 0 until 4) {
-                    if (world.step(press, prune = false) == StepResult.DIED) { ok = false; break }
-                }
-                if (ok) stack.add(St(world.x, world.y, world.vy, world.grounded, world.held, world.ship, world.flipped, world.wave))
-            }
+            frontier = next
         }
         if (out.isEmpty()) return false
         states = out.values.take(300)
@@ -422,6 +474,7 @@ internal class GeometryDirector(private val songKey: String) {
     private var shipLeft = 0
     private var cubeSince = 0
     private var inFlip = false
+    private var inBall = false
     private var flipLeft = 0
 
     /** a new attempt: the level kept, the world's start over */
@@ -462,14 +515,21 @@ internal class GeometryDirector(private val songKey: String) {
                 var mirrored = false
                 if (inShip) {
                     if (shipLeft <= 0) forced = Pattern.PORTAL_OUT
-                    else pool = Pattern.entries.filter { it.ship && !it.isPortal && (hard || !it.hard) }
+                    else pool = if (inBall) Pattern.entries.filter { it.section == 1 && (hard || !it.hard) }
+                        else Pattern.entries.filter { it.ship && !it.isPortal && (hard || !it.hard) }
                 } else if (inFlip) {
                     if (flipLeft <= 0) forced = Pattern.PORTAL_UNFLIP
-                    else { pool = Pattern.entries.filter { !it.ship && !it.isPortal && it.flippable && (hard || !it.hard) }; mirrored = true }
+                    else { pool = Pattern.entries.filter { !it.ship && !it.isPortal && it.section == 0 && it.flippable && (hard || !it.hard) }; mirrored = true }
                 } else if (cubeSince >= (if (hard) 6 else 9) && t < end - 14_000L && random.nextFloat() < 0.35f) {
-                    forced = when (random.nextInt(3)) { 0 -> Pattern.PORTAL_IN; 1 -> Pattern.PORTAL_WAVE; else -> Pattern.PORTAL_FLIP }
+                    forced = when (random.nextInt(5)) {
+                        0 -> Pattern.PORTAL_IN
+                        1 -> Pattern.PORTAL_WAVE
+                        2 -> Pattern.PORTAL_UFO
+                        3 -> Pattern.PORTAL_BALL
+                        else -> Pattern.PORTAL_FLIP
+                    }
                 } else {
-                    pool = Pattern.entries.filter { !it.ship && !it.isPortal && (hard || !it.hard) }
+                    pool = Pattern.entries.filter { !it.ship && !it.isPortal && it.section == 0 && (hard || !it.hard) }
                 }
                 for (attempt in 0 until (if (forced != null) 1 else 5)) {
                     val candidate = forced ?: pool[random.nextInt(pool.size)]
@@ -485,7 +545,9 @@ internal class GeometryDirector(private val songKey: String) {
                         specs.add(Spec(t + takeoffMs, candidate, mirrored))
                         boundary = reachEnd
                         when {
-                            candidate == Pattern.PORTAL_IN || candidate == Pattern.PORTAL_WAVE -> { inShip = true; shipLeft = (if (hard) 5 else 3) + random.nextInt(3); cubeSince = 0 }
+                            candidate == Pattern.PORTAL_IN || candidate == Pattern.PORTAL_WAVE || candidate == Pattern.PORTAL_UFO || candidate == Pattern.PORTAL_BALL -> {
+                                inBall = candidate == Pattern.PORTAL_BALL
+                                inShip = true; shipLeft = (if (hard) 5 else 3) + random.nextInt(3); cubeSince = 0 }
                             candidate == Pattern.PORTAL_OUT -> { inShip = false; cubeSince = 0 }
                             candidate == Pattern.PORTAL_FLIP -> { inFlip = true; flipLeft = (if (hard) 5 else 3) + random.nextInt(3); cubeSince = 0 }
                             candidate == Pattern.PORTAL_UNFLIP -> { inFlip = false; cubeSince = 0 }

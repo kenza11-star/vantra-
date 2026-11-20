@@ -366,7 +366,7 @@ fun GeometryPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, pr
                                     s.waveHead = (s.waveHead + 1) % 48
                                     s.waveCount = min(48, s.waveCount + 1)
                                 } else if (!world.wave) s.waveCount = 0
-                                s.shipFade += ((if (world.ship || world.wave || world.flipped) 1f else 0f) - s.shipFade) * min(1f, stepDt * 6f)
+                                s.shipFade += ((if (world.ship || world.wave || world.flipped || world.ball || world.ufo) 1f else 0f) - s.shipFade) * min(1f, stepDt * 6f)
                                 s.tapLatch = false
                                 // dust and pieces fly
                                 var i = 0
@@ -610,7 +610,7 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
                     drawPath(spikePath, Color.Black)
                     drawPath(spikePath, Color.White.copy(alpha = 0.9f), style = Stroke(unit * 0.07f))
                 }
-                Kind.PORTAL_SHIP, Kind.PORTAL_CUBE, Kind.PORTAL_FLIP, Kind.PORTAL_UNFLIP, Kind.PORTAL_WAVE -> {
+                Kind.PORTAL_SHIP, Kind.PORTAL_CUBE, Kind.PORTAL_FLIP, Kind.PORTAL_UNFLIP, Kind.PORTAL_WAVE, Kind.PORTAL_BALL, Kind.PORTAL_UFO -> {
                     // a tall beam across the whole level: pink turns the cube into a ship, cyan gives the cube back,
                     // orange turns gravity upside down and green puts it right again
                     val colour = when (o.kind) {
@@ -618,6 +618,8 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
                         Kind.PORTAL_FLIP -> Color(0xFFFFB02E)
                         Kind.PORTAL_UNFLIP -> Color(0xFF45F08C)
                         Kind.PORTAL_WAVE -> Color(0xFFB36BFF)
+                        Kind.PORTAL_BALL -> Color(0xFFFF5252)
+                        Kind.PORTAL_UFO -> Color(0xFFFFE08A)
                         else -> Color(0xFF38E8FF)
                     }
                     val beamTop = sy(Gd.Ceiling)
@@ -653,7 +655,29 @@ private fun DrawScope.drawGame(g: GeometryRuntime, durationMs: Long, textMeasure
         }
 
         // the cube
-        if (world.alive && world.wave) {
+        if (world.alive && world.ball) {
+            // the ball: a round body with spokes, rolling along whichever side it is on
+            val cx = playerX
+            val cy = sy(world.y + 0.5f)
+            rotate(world.rotation, Offset(cx, cy)) {
+                drawCircle(Color(0xFF30E6FF), unit * 0.5f, Offset(cx, cy))
+                drawCircle(Color.White, unit * 0.5f, Offset(cx, cy), style = Stroke(unit * 0.07f))
+                drawLine(Color.White.copy(alpha = 0.85f), Offset(cx - unit * 0.42f, cy), Offset(cx + unit * 0.42f, cy), unit * 0.06f)
+                drawLine(Color.White.copy(alpha = 0.85f), Offset(cx, cy - unit * 0.42f), Offset(cx, cy + unit * 0.42f), unit * 0.06f)
+                drawCircle(Color(0xFF0B3C5C), unit * 0.16f, Offset(cx, cy))
+            }
+        } else if (world.alive && world.ufo) {
+            // the ufo: a saucer with a small dome on top that bobs a little as it is tapped
+            val cx = playerX
+            val cy = sy(world.y + 0.5f)
+            val tilt = (-world.vy * 1.2f).coerceIn(-14f, 14f)
+            rotate(tilt, Offset(cx, cy)) {
+                drawArc(Color(0xFF30E6FF), 180f, 180f, true, Offset(cx - unit * 0.3f, cy - unit * 0.5f), Size(unit * 0.6f, unit * 0.6f))
+                drawArc(Color.White, 180f, 180f, true, Offset(cx - unit * 0.3f, cy - unit * 0.5f), Size(unit * 0.6f, unit * 0.6f), style = Stroke(unit * 0.05f))
+                drawOval(Color(0xFF30E6FF), Offset(cx - unit * 0.66f, cy - unit * 0.12f), Size(unit * 1.32f, unit * 0.5f))
+                drawOval(Color.White, Offset(cx - unit * 0.66f, cy - unit * 0.12f), Size(unit * 1.32f, unit * 0.5f), style = Stroke(unit * 0.06f))
+            }
+        } else if (world.alive && world.wave) {
             // the wave: a bright trail of where it has been and a small arrow pointing along its way
             val cx = playerX
             val cy = sy(world.y + 0.5f)

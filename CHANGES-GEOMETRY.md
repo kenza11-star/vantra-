@@ -35,4 +35,11 @@ A rhythm platformer built out of the song that is playing, picked from the playe
 - Ship, wave and gravity sections are picked a third each after 6 (hard) / 9 (calm) cube patterns.
 - "Best N%" is shown under the progress bar and kept per song across sessions (GeometryBestKey, at most 150 songs); a win counts as 100.
 
-Next stages: ball and UFO modes, speed portals, practice mode with checkpoints, more effects.
+## Stage 6: ball and UFO, and a sturdier playability check
+
+- Red portal: the ball. It does not jump; a fresh tap sends it from the floor to the roof and back (a held finger changes nothing), and it rolls on whichever side it is on. Its shapes (pillars from floor / roof, spikes on the floor / roof, a zig-zag) all ask it to change sides.
+- Cream portal: the UFO. Every fresh tap, in the air too, throws it up a little; it falls gently in between. It flies the ship's gates.
+- Five section kinds now (ship, wave, ufo, ball, gravity), picked at random after 6 (hard) / 9 (calm) cube patterns.
+- Playability now searches one decision at a time over every place the cube could be, merging only states at the same distance. The old depth-first search with a coarse distance key could throw away a perfectly good path in modes where the cube sits still (a ship held against the roof), so some good patterns were refused.
+
+Next stages: speed portals, practice mode with checkpoints, more effects.

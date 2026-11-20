@@ -254,4 +254,57 @@ class GeometryGameTest {
         assertEquals(12, GeometryBest.get(raw, "song-b"))
         assertEquals(0, GeometryBest.get(raw, "unknown"))
     }
+
+    @Test fun aBallChangesSidesOnAFreshTapAndIgnoresAHeldOne() {
+        val world = GeometryWorld()
+        world.ball = true
+        world.step(true)
+        assertTrue("flipped", world.flipped)
+        repeat(240) { world.step(true) }
+        // still held: no second change of sides, it stays on the roof
+        assertTrue(world.flipped)
+        assertEquals(Gd.Ceiling - 1f, world.y, 0.05f)
+        world.step(false)
+        world.step(true)
+        assertFalse(world.flipped)
+    }
+
+    @Test fun aBallThatNeverTapsDiesOnAFloorSpike() {
+        val world = GeometryWorld()
+        world.ball = true
+        world.obstacles.add(Obstacle(Kind.SPIKE, 8f, 0f, 1f, 1f))
+        assertFalse(run(world, 14f) { false })
+        val other = GeometryWorld()
+        other.ball = true
+        other.obstacles.add(Obstacle(Kind.SPIKE, 8f, 0f, 1f, 1f))
+        var tapped = false
+        assertTrue(run(other, 14f) { val tap = !tapped && it.x > 5f; if (tap) tapped = true; tap })
+    }
+
+    @Test fun aUfoHopsOnEveryTapWithoutTouchingTheGround() {
+        val world = GeometryWorld()
+        world.ufo = true
+        world.y = 3f
+        var peak = 0f
+        repeat(40) { world.step(false) }
+        val low = world.y
+        world.step(true)
+        repeat(30) { world.step(false); peak = maxOf(peak, world.y) }
+        assertTrue("hopped from $low to $peak", peak > low + 0.5f)
+    }
+
+    @Test fun ballAndUfoSectionsCanBePlayed() {
+        for (portal in listOf(Pattern.PORTAL_BALL, Pattern.PORTAL_UFO)) {
+            val playable = Playability()
+            var anchor = 8f
+            val shapes = if (portal == Pattern.PORTAL_BALL)
+                listOf(Pattern.BALL_LOW, Pattern.BALL_HIGH, Pattern.BALL_SPIKES_FLOOR, Pattern.BALL_SPIKES_ROOF, Pattern.BALL_ZIG)
+            else listOf(Pattern.GATE_LOW, Pattern.GATE_SPIKES, Pattern.GATE_STEPS)
+            for (pattern in listOf(portal) + shapes + listOf(Pattern.PORTAL_OUT, Pattern.SPIKE)) {
+                val cells = pattern.cells.map { Obstacle(it.kind, anchor + it.dx, it.y, it.w, it.h) }
+                assertTrue("$portal $pattern", playable.tryAdd(cells, anchor + pattern.reach + 0.7f))
+                anchor += 8.9f
+            }
+        }
+    }
 }
