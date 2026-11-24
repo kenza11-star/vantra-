@@ -146,7 +146,7 @@ fun DynamicIslandSettingsScreen(navController: NavController) {
                     stringResource(R.string.dynamic_island_perm_calls),
                     stringResource(R.string.dynamic_island_perm_calls_sub),
                     calls,
-                ) { askCalls.launch(Perms.CALL_PERMISSIONS.toTypedArray()) }
+                ) { askCalls.launch(Perms.CALL_PERMISSIONS) }
                 PermissionRow(
                     stringResource(R.string.dynamic_island_perm_bluetooth),
                     stringResource(R.string.dynamic_island_perm_bluetooth_sub),

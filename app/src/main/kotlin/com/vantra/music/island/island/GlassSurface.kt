@@ -251,20 +251,20 @@ internal class GlassLensShader : ShaderBrush() {
 
 /** Compose can cache the brush while the native shader reuses one local transform. */
 private class GlassGradient(private val shader: Shader) : ShaderBrush() {
-    private val transform = Matrix()
+    private val glassMatrix = Matrix()
     private val values = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
     override fun createShader(size: Size): Shader = shader
 
     fun linear(x: Float, y: Float, dx: Float, dy: Float) {
         values[0] = dx; values[1] = -dy; values[2] = x
         values[3] = dy; values[4] = dx; values[5] = y
-        transform.setValues(values)
-        shader.setLocalMatrix(transform)
+        glassMatrix.setValues(values)
+        shader.setLocalMatrix(glassMatrix)
     }
 
     fun radial(x: Float, y: Float, radius: Float) {
-        transform.setScale(radius, radius)
-        transform.postTranslate(x, y)
-        shader.setLocalMatrix(transform)
+        glassMatrix.setScale(radius, radius)
+        glassMatrix.postTranslate(x, y)
+        shader.setLocalMatrix(glassMatrix)
     }
 }
