@@ -68,6 +68,9 @@ jobs:
           sed -i 's#^validateDistributionUrl=.*#validateDistributionUrl=false#' gradle/wrapper/gradle-wrapper.properties
           ./gradlew --version
 
+      - name: Remove leftover files from the old source
+        run: bash .github/scripts/remove-old-source.sh
+
       - name: Restore and verify the permanent release key
         id: signing
         env:
