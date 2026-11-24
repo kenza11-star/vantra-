@@ -67,6 +67,7 @@ class App : Application(), SingletonImageLoader.Factory {
         // before super, because that's where hilt builds the database and the player caches
         com.vantra.music.importer.transfer.TransferRestore.applyPending(this)
         super.onCreate()
+        runCatching { com.vantra.music.island.IslandRuntime.init(this) }
 
         AppLanguage.initialize(this)
         CrashHandler.install(this)

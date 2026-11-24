@@ -1581,6 +1581,7 @@ val SubSettingsRoutes = setOf(
     "audio_quality",
     "crossmix_settings",
     "modules",
+    "dynamic_island",
     "module/{id}",
 )
 

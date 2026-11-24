@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dynamic_island_a11y_label">Dynamic Island</string>
+    <string name="dynamic_island_tile_label">Pulau</string>
+    <string name="dynamic_island_a11y_desc">Menampilkan kapsul bergaya Dynamic Island di atas kamera: musik, timer, progres unduhan, senter dan peristiwa sistem. Layanan ini melihat aplikasi mana yang terbuka untuk menyembunyikan pemutar dan menampilkan pembayaran. Layar hanya dibaca di aplikasi navigasi (2GIS, Yandex Navigator, Maps dan lainnya), aplikasi Jam dan aplikasi pembayaran selama terbuka: di aplikasi navigasi — jarak ke belokan berikutnya, nama jalan, waktu tiba dan arah panah; di Jam — waktu timer dan stopwatch; di aplikasi pembayaran (Mir Pay, T-Pay, Google Wallet dan lainnya) — layar bayar dengan ponsel dan jumlahnya, untuk menampilkan “Dekatkan ke terminal” lalu “Dibayar”. Data yang dibaca tetap di ponsel. Judul, artis, album dan durasi lagu dikirim untuk mencari lirik. Cuaca opsional mengirim kota pilihan dan koordinatnya ke Open-Meteo. Deteksi panel hanya membaca panel notifikasi sistem; kontak dan jumlah langkah tetap di ponsel. Untuk gestur opsional gulir ke atas, layanan memeriksa elemen yang dapat digulir di aplikasi terbuka tanpa membaca teksnya.</string>
+    <string name="settings_dynamic_island_category">Dynamic Island</string>
+    <string name="dynamic_island_intro">Kapsul di atas kamera yang menampilkan lagu yang diputar Vantra, timer, panggilan, pengisian daya, dan lainnya dengan animasi halus.</string>
+    <string name="dynamic_island_enable">Aktifkan Dynamic Island</string>
+    <string name="dynamic_island_enable_sub">Menampilkan kapsul di bagian atas layar</string>
+    <string name="dynamic_island_status_running">Sedang berjalan</string>
+    <string name="dynamic_island_status_needs_permission">Menunggu izin aksesibilitas</string>
+    <string name="dynamic_island_status_off">Nonaktif</string>
+    <string name="dynamic_island_permissions">Izin</string>
+    <string name="dynamic_island_perm_accessibility">Aksesibilitas</string>
+    <string name="dynamic_island_perm_accessibility_sub">Wajib: menggambar kapsul di atas bilah status</string>
+    <string name="dynamic_island_perm_listener">Akses notifikasi</string>
+    <string name="dynamic_island_perm_listener_sub">Musik, progres, dan pesan dari aplikasi lain</string>
+    <string name="dynamic_island_perm_post">Notifikasi</string>
+    <string name="dynamic_island_perm_post_sub">Menjaga kapsul tetap berjalan di latar belakang</string>
+    <string name="dynamic_island_perm_battery">Baterai tanpa batasan</string>
+    <string name="dynamic_island_perm_battery_sub">Mencegah Android menutup kapsul</string>
+    <string name="dynamic_island_perm_calls">Panggilan telepon</string>
+    <string name="dynamic_island_perm_calls_sub">Menampilkan panggilan masuk dengan tombol jawab dan tolak</string>
+    <string name="dynamic_island_perm_bluetooth">Bluetooth</string>
+    <string name="dynamic_island_perm_bluetooth_sub">Menampilkan headphone saat terhubung</string>
+    <string name="dynamic_island_granted">Diizinkan</string>
+    <string name="dynamic_island_grant">Izinkan</string>
+    <string name="dynamic_island_more">Pengaturan lainnya</string>
+    <string name="dynamic_island_all_permissions">Semua izin</string>
+    <string name="dynamic_island_all_permissions_sub">Penghitung langkah, alarm, kecerahan, dan lainnya</string>
+    <string name="dynamic_island_full_settings">Pengaturan Dynamic Island lengkap</string>
+    <string name="dynamic_island_full_settings_sub">Tampilan, animasi, gestur, lirik, banner, dan lainnya</string>
+    <string name="dynamic_island_unsupported">Dynamic Island membutuhkan Android 8.0 atau lebih baru.</string>
+</resources>

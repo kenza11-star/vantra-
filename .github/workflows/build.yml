@@ -68,9 +68,6 @@ jobs:
           sed -i 's#^validateDistributionUrl=.*#validateDistributionUrl=false#' gradle/wrapper/gradle-wrapper.properties
           ./gradlew --version
 
-      - name: Remove leftovers of the old mochy source
-        run: bash .github/scripts/remove-old-source.sh
-
       - name: Restore and verify the permanent release key
         id: signing
         env:

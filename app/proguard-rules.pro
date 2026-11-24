@@ -172,3 +172,10 @@
 -keepclasseswithmembers class com.music.shazamkit.models.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# Dynamic Island
+-keep class com.vantra.music.island.face.FaceSourceService { *; }
+-keep class com.vantra.music.island.face.FaceShizukuProvider { *; }
+-keep class com.vantra.music.island.service.** extends android.app.Service { *; }
+-keep class com.vantra.music.island.data.** { *; }
+-dontwarn rikka.shizuku.**

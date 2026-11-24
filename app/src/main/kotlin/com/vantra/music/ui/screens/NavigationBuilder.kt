@@ -507,6 +507,10 @@ fun NavGraphBuilder.navigationBuilder(
         com.vantra.music.ui.screens.audiolab.AudioPassScreen(navController = navController)
     }
 
+    composable("dynamic_island") {
+        com.vantra.music.ui.screens.settings.DynamicIslandSettingsScreen(navController = navController)
+    }
+
     composable(com.vantra.music.ui.screens.settings.modules.ModulesRoute) {
         com.vantra.music.ui.screens.settings.modules.ModulesScreen(navController = navController)
     }

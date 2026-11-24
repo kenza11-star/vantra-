@@ -138,6 +138,7 @@ private val LocalizedSettingsPages = mapOf(
 
 private val SettingsIndex = listOf(
     // Customisation
+    SettingsEntry("Dynamic Island", "Dynamic Island", "dynamic_island", "capsule notch island permissions accessibility notification overlay animation timer"),
     SettingsEntry("Customisation", "Customisation", "customisation_settings", "customize cover rounding playlist player home styles gesture swipe blur animation lyrics"),
     SettingsEntry("Cover rounding", "Customisation", "customisation_settings", "square rounded corner radius px thumbnail art"),
     SettingsEntry("Playlist styles", "Customisation", "customisation_settings", "flow classic minimal header layout"),
@@ -535,6 +536,12 @@ fun VantraSettingsScreen(navController: NavController) {
                             title = stringResource(R.string.settings_modules_category),
                             iconRes = R.drawable.library_add,
                             onClick = { navController.navigate("modules") }
+                        )
+
+                        CategoryBubble(
+                            title = stringResource(R.string.settings_dynamic_island_category),
+                            iconRes = R.drawable.ic_dynamic_island_menu,
+                            onClick = { navController.navigate("dynamic_island") }
                         )
                     }
                 }

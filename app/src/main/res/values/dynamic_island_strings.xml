@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dynamic_island_a11y_label">Dynamic Island</string>
+    <string name="dynamic_island_tile_label">Island</string>
+    <string name="dynamic_island_a11y_desc">Shows a Dynamic Island–style capsule over the camera: music, timers, download progress, the flashlight and system events. The service sees which app is open to hide the player and show payments. The screen is read only in navigation apps (2GIS, Yandex Navigator, Maps and others), the Clock app and payment apps while they are open: in navigation apps — the distance to the next turn, the street, the arrival time and the arrow direction; in Clock — the timer and stopwatch time; in payment apps (Mir Pay, T-Pay, Google Wallet and others) — the phone payment screen and the amount, to show “Hold near reader” and then “Paid”. What is read stays on the phone. Song title, artist, album and duration are sent to lyrics providers. Optional weather sends your selected city and coordinates to Open-Meteo. Optional shade detection examines only the system notification panel; contacts and step counts stay on the phone. For the optional scroll-to-top gesture, the service checks scrollable elements in the foreground app without reading their text.</string>
+    <string name="settings_dynamic_island_category">Dynamic Island</string>
+    <string name="dynamic_island_intro">A capsule over the camera that shows what Vantra is playing, timers, calls, charging and more, with smooth animations.</string>
+    <string name="dynamic_island_enable">Turn on Dynamic Island</string>
+    <string name="dynamic_island_enable_sub">Shows the capsule at the top of the screen</string>
+    <string name="dynamic_island_status_running">Running now</string>
+    <string name="dynamic_island_status_needs_permission">Waiting for the accessibility permission</string>
+    <string name="dynamic_island_status_off">Turned off</string>
+    <string name="dynamic_island_permissions">Permissions</string>
+    <string name="dynamic_island_perm_accessibility">Accessibility</string>
+    <string name="dynamic_island_perm_accessibility_sub">Required: draws the capsule over the status bar</string>
+    <string name="dynamic_island_perm_listener">Notification access</string>
+    <string name="dynamic_island_perm_listener_sub">Music, progress and messages from other apps</string>
+    <string name="dynamic_island_perm_post">Notifications</string>
+    <string name="dynamic_island_perm_post_sub">Keeps the capsule running in the background</string>
+    <string name="dynamic_island_perm_battery">Unrestricted battery</string>
+    <string name="dynamic_island_perm_battery_sub">Stops Android from closing the capsule</string>
+    <string name="dynamic_island_perm_calls">Phone calls</string>
+    <string name="dynamic_island_perm_calls_sub">Shows incoming calls with answer and decline</string>
+    <string name="dynamic_island_perm_bluetooth">Bluetooth</string>
+    <string name="dynamic_island_perm_bluetooth_sub">Shows headphones when they connect</string>
+    <string name="dynamic_island_granted">Allowed</string>
+    <string name="dynamic_island_grant">Allow</string>
+    <string name="dynamic_island_more">More settings</string>
+    <string name="dynamic_island_all_permissions">All permissions</string>
+    <string name="dynamic_island_all_permissions_sub">Step counter, alarms, brightness and more</string>
+    <string name="dynamic_island_full_settings">Full Dynamic Island settings</string>
+    <string name="dynamic_island_full_settings_sub">Look, animations, gestures, lyrics, banners and more</string>
+    <string name="dynamic_island_unsupported">Dynamic Island needs Android 8.0 or newer.</string>
+</resources>

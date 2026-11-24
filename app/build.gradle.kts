@@ -258,6 +258,7 @@ extensions.configure<ApplicationExtension> {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     dependenciesInfo {
@@ -399,6 +400,9 @@ dependencies {
     implementation(libs.androidx.adaptive.layout)
     implementation(libs.androidx.adaptive.navigation)
     implementation(libs.palette)
+    // Dynamic Island: optional face-only mode through Shizuku
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation(libs.materialKolor)
 
     implementation(libs.appcompat)
