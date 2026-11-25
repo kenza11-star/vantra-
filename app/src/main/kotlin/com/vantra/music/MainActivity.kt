@@ -1003,7 +1003,7 @@ class MainActivity : ComponentActivity() {
 
                                 val navBarTotalHeight = bottomInset + NavigationBarHeight
 
-                                if (!showRail && currentRoute != "wrapped" && currentRoute != "update") {
+                                if (!showRail && currentRoute != "wrapped" && currentRoute != "update" && currentRoute != "lyric_constellation") {
 
                                     val detailAccent = LocalDetailAccentColor.current.value
                                     val navScrimTint by androidx.compose.animation.animateColorAsState(
@@ -1093,7 +1093,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else {
-                                    if (currentRoute != "wrapped" && currentRoute != "update") {
+                                    if (currentRoute != "wrapped" && currentRoute != "update" && currentRoute != "lyric_constellation") {
                                         BottomSheetPlayer(
                                             state = playerBottomSheetState,
                                             navController = navController,
@@ -1125,7 +1125,7 @@ class MainActivity : ComponentActivity() {
                                     { navController.requestSearchFocus() }
                                 }
 
-                                if (showRail && currentRoute != "wrapped" && currentRoute != "update") {
+                                if (showRail && currentRoute != "wrapped" && currentRoute != "update" && currentRoute != "lyric_constellation") {
                                     AppNavigationRail(
                                         navigationItems = navigationItems,
                                         currentRoute = currentRoute,
@@ -1582,6 +1582,7 @@ val SubSettingsRoutes = setOf(
     "crossmix_settings",
     "modules",
     "dynamic_island",
+    "lyric_constellation",
     "module/{id}",
 )
 

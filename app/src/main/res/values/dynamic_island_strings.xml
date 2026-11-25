@@ -46,4 +46,6 @@
     <string name="dynamic_island_notif_choose_sub">Always show or never show for each app</string>
     <string name="dynamic_island_notif_diag">Why was a notification not shown?</string>
     <string name="dynamic_island_notif_diag_sub">Shows the reason for every notification that was skipped</string>
+    <string name="settings_lyric_constellation">Lyric Player</string>
+    <string name="lyric_constellation_desc">Full-screen landscape lyrics as a star map</string>
 </resources>

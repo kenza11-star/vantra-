@@ -46,4 +46,6 @@
     <string name="dynamic_island_notif_choose_sub">Selalu tampilkan atau jangan tampilkan per aplikasi</string>
     <string name="dynamic_island_notif_diag">Kenapa notifikasi tidak tampil?</string>
     <string name="dynamic_island_notif_diag_sub">Menampilkan alasan setiap notifikasi yang dilewati</string>
+    <string name="settings_lyric_constellation">Pemutar Lirik</string>
+    <string name="lyric_constellation_desc">Lirik landscape layar penuh berupa peta bintang</string>
 </resources>

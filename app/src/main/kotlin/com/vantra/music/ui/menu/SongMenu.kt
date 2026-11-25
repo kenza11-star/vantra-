@@ -496,6 +496,23 @@ fun SongMenu(
             Material3MenuGroup(
                 items = listOfNotNull(
 
+                    // only for the song that is playing: this is how the full player reaches the lyric player
+                    if (playerConnection.mediaMetadata.value?.id == song.id) {
+                        Material3MenuItemData(
+                            title = { Text(text = stringResource(R.string.settings_lyric_constellation)) },
+                            description = { Text(text = stringResource(R.string.lyric_constellation_desc)) },
+                            icon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_constellation_menu),
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                onDismiss()
+                                navController.navigate("lyric_constellation")
+                            }
+                        )
+                    } else null,
                     if (true) {
                         Material3MenuItemData(
                             title = { Text(text = stringResource(R.string.start_radio)) },
