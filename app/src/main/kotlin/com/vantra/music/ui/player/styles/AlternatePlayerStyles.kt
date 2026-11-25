@@ -82,6 +82,7 @@ fun AlternatePlayerStyle(
         PlayerStyle.TERMINAL -> com.vantra.music.ui.player.terminal.TerminalPlayerStyle(actions, modifier, preview)
         PlayerStyle.PHONK -> com.vantra.music.ui.player.terminal.PhonkPlayerStyle(actions, modifier, preview)
         PlayerStyle.GEOMETRY -> com.vantra.music.ui.player.geometry.GeometryPlayerStyle(actions, modifier, preview)
+        PlayerStyle.LIQUID -> com.vantra.music.ui.player.liquid.LiquidPlayerStyle(actions, modifier, preview)
         PlayerStyle.MODULE -> ModulePlayerStyle(actions, modifier, preview)
         PlayerStyle.FLAGSHIP, PlayerStyle.CLASSIC, PlayerStyle.TURNTABLE -> Unit
     }

@@ -227,6 +227,7 @@ fun StudioSheets(
             StudioSheet.IPOD -> IpodOptions()
             StudioSheet.BEDSIDE -> BedsideOptions()
             StudioSheet.TERMINAL -> TerminalOptions()
+            StudioSheet.LIQUID -> LiquidOptions()
 
         }
         }
@@ -240,7 +241,7 @@ fun StudioSheets(
 @Composable
 fun StyleSheets(studio: PlayerStudioState) {
     val sheet = studio.sheet
-    if (sheet != StudioSheet.POSTER && sheet != StudioSheet.IPOD && sheet != StudioSheet.BEDSIDE && sheet != StudioSheet.TERMINAL) return
+    if (sheet != StudioSheet.POSTER && sheet != StudioSheet.IPOD && sheet != StudioSheet.BEDSIDE && sheet != StudioSheet.TERMINAL && sheet != StudioSheet.LIQUID) return
     MenuSheetSurface(onDismiss = { studio.sheet = null }, wrapHeight = true) { _ ->
         androidx.compose.runtime.CompositionLocalProvider(
             androidx.compose.material3.LocalTextStyle provides studioText(StudioType.Body),
@@ -249,6 +250,7 @@ fun StyleSheets(studio: PlayerStudioState) {
                 StudioSheet.IPOD -> IpodOptions()
                 StudioSheet.BEDSIDE -> BedsideOptions()
                 StudioSheet.TERMINAL -> TerminalOptions()
+                StudioSheet.LIQUID -> LiquidOptions()
                 else -> PosterOptions()
             }
         }

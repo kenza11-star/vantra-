@@ -138,12 +138,11 @@ private val LocalizedSettingsPages = mapOf(
 
 private val SettingsIndex = listOf(
     // Customisation
-    SettingsEntry("Lyric Player", "Lyric Player", "lyric_constellation", "lyrics constellation stars landscape player full screen clock"),
     SettingsEntry("Dynamic Island", "Dynamic Island", "dynamic_island", "capsule notch island permissions accessibility notification overlay animation timer"),
     SettingsEntry("Customisation", "Customisation", "customisation_settings", "customize cover rounding playlist player home styles gesture swipe blur animation lyrics"),
     SettingsEntry("Cover rounding", "Customisation", "customisation_settings", "square rounded corner radius px thumbnail art"),
     SettingsEntry("Playlist styles", "Customisation", "customisation_settings", "flow classic minimal header layout"),
-    SettingsEntry("Player styles", "Customisation", "customisation_settings", "flagship turntable ipod poster timeline lyrics studio customize player cover"),
+    SettingsEntry("Player styles", "Customisation", "customisation_settings", "flagship turntable ipod poster timeline lyrics studio customize player cover liquid constellation star map lyric style video blur clock"),
     SettingsEntry("Home styles", "Customisation", "customisation_settings", "vantra listen now hop in hero layout grid"),
     SettingsEntry("Blur", "Customisation", "customisation_settings", "blur glass frosted performance lag"),
     SettingsEntry("Progressive blur", "Customisation", "customisation_settings", "gradient fade top bar hairline flat"),
@@ -537,12 +536,6 @@ fun VantraSettingsScreen(navController: NavController) {
                             title = stringResource(R.string.settings_modules_category),
                             iconRes = R.drawable.library_add,
                             onClick = { navController.navigate("modules") }
-                        )
-
-                        CategoryBubble(
-                            title = stringResource(R.string.settings_lyric_constellation),
-                            iconRes = R.drawable.ic_constellation_menu,
-                            onClick = { navController.navigate("lyric_constellation") }
                         )
 
                         CategoryBubble(

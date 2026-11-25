@@ -1694,6 +1694,13 @@ private fun PlayerSheet(
                     studio.settleOn(focused, restyled) {
                         studio.openSheet(com.vantra.music.ui.player.studio.StudioSheet.TERMINAL)
                     }
+                } else if (playerStyles.getOrNull(focused) == PlayerStyle.LIQUID) {
+                    // the lyric look (star map, kinetic, karaoke, minimal), in a sheet over the style itself
+                    val restyled = playerStyle != PlayerStyle.LIQUID
+                    if (restyled) onPlayerStyleChange(PlayerStyle.LIQUID)
+                    studio.settleOn(focused, restyled) {
+                        studio.openSheet(com.vantra.music.ui.player.studio.StudioSheet.LIQUID)
+                    }
                 } else if (playerStyles.getOrNull(focused) == PlayerStyle.TURNTABLE) {
                     // its one edit is the disc label: back to the player, with the label's sheet
                     val restyled = playerStyle != PlayerStyle.TURNTABLE
@@ -1711,7 +1718,7 @@ private fun PlayerSheet(
             },
         )
         // the Poster's, the iPod's and the bedside's sheets, each over its own style
-        if (playerStyle == PlayerStyle.POSTER || playerStyle == PlayerStyle.IPOD || playerStyle == PlayerStyle.TERMINAL || playerStyle == PlayerStyle.PHONK || playerStyle.isBedside) {
+        if (playerStyle == PlayerStyle.POSTER || playerStyle == PlayerStyle.IPOD || playerStyle == PlayerStyle.TERMINAL || playerStyle == PlayerStyle.PHONK || playerStyle == PlayerStyle.LIQUID || playerStyle.isBedside) {
             com.vantra.music.ui.player.studio.StyleSheets(studio)
         }
         if (playerStyle.flagshipFamily) {

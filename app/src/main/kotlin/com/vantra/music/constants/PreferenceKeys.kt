@@ -655,16 +655,18 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
     PHONK("Phonk", "Phonk"),
     // a rhythm platformer built out of the playing song: a cube runs a level whose obstacles land on the beats, a held finger jumps
     GEOMETRY("Geometry", "Geometry"),
+    // the laptop-lock-screen look: the song's video (or its cover, when it has none) melted into liquid glass, a big clock, and the lyrics drawn as a star map
+    LIQUID("Liquid", "Liquid"),
     // a look module's own player, drawn from its layout; kept last so the others keep their places, and only offered while such a module is on
     MODULE("Module", "Module");
 
-    val editable: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE || this == POSTER || this == IPOD || this == TERMINAL || this == PHONK || isBedside
+    val editable: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE || this == POSTER || this == IPOD || this == TERMINAL || this == PHONK || this == LIQUID || isBedside
 
     // the two nightstand styles share their sheet, their night look and their lock screen rules
     val isBedside: Boolean get() = this == BEDSIDE || this == BEDSIDE_TILES
 
     // laid out sideways until someone turns it upright, the way a phone stands on a nightstand
-    val startsSideways: Boolean get() = this == BEDSIDE_TILES
+    val startsSideways: Boolean get() = this == BEDSIDE_TILES || this == LIQUID
 
     /** drawn by the flagship's own player (cover, controls, card), not a design of its own */
     val flagshipFamily: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE
@@ -696,11 +698,24 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
             listOf(TERMINAL),
             listOf(PHONK),
             listOf(GEOMETRY),
+            listOf(LIQUID),
         )
     }
 }
 
 val PlayerStyleKey = stringPreferencesKey("playerStyle")
+
+// ---- the Liquid player style's lyric looks ----
+
+/** how the Liquid style sets the song's words; picked in the style selector's Edit sheet and from the style itself */
+enum class LiquidLyricStyle(val title: String, val description: String) {
+    CONSTELLATION("Constellation", "each word lands as a star on a map, joined to the ones before it"),
+    KINETIC("Kinetic", "the line big in the middle, its words rising in one by one"),
+    KARAOKE("Karaoke", "two lines low on the screen, the sung one filling with light"),
+    MINIMAL("Minimal", "one quiet line at a time, melting from one into the next"),
+}
+
+val LiquidLyricStyleKey = stringPreferencesKey("liquidLyricStyle")
 
 // ---- the Geometry player style's flame streak ----
 

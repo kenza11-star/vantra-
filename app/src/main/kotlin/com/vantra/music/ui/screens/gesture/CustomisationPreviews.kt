@@ -133,6 +133,24 @@ internal fun PlayerStylePreview(style: PlayerStyle) {
             Box(Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 22.dp).size(18.dp).background(Color(0xFF30E6FF)))
             Box(Modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 22.dp).size(16.dp).background(Color.Black))
         }
+        // frosted violet glass, a big pale clock over it and a few stars joined by threads
+        PlayerStyle.LIQUID -> Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(listOf(Color(0xFFB9B3C9), Color(0xFF4A4161), Color(0xFF2A2338))),
+            ),
+        ) {
+            Column(Modifier.align(Alignment.TopCenter).padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Bar(14.dp, 2.dp, BoneDim)
+                Spacer(Modifier.height(3.dp))
+                Bar(40.dp, 10.dp, Color.White.copy(alpha = 0.45f))
+            }
+            Box(Modifier.align(Alignment.Center).padding(top = 14.dp).size(width = 92.dp, height = 44.dp)) {
+                Box(Modifier.align(Alignment.TopStart).padding(start = 6.dp, top = 8.dp).size(7.dp).background(Color.White.copy(alpha = 0.55f), CircleShape))
+                Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).size(7.dp).background(Color.White.copy(alpha = 0.7f), CircleShape))
+                Box(Modifier.align(Alignment.BottomStart).padding(start = 30.dp, bottom = 4.dp).size(9.dp).background(Color.White, CircleShape))
+                Box(Modifier.align(Alignment.Center).size(width = 56.dp, height = 1.dp).background(Color.White.copy(alpha = 0.35f)))
+            }
+        }
         PlayerStyle.PHONK -> Row(
             Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
