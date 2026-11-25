@@ -3,6 +3,11 @@ package com.vantra.music.ui.player.liquid
 import com.vantra.music.ui.utils.resize
 import android.os.Build
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.core.graphics.ColorUtils
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.toArgb
+import com.vantra.music.LocalArtworkColor
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -99,7 +104,6 @@ import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 private val Cream = Color(0xFFF6EBD8)
-private val Violet = Color(0xFFB79CFF)
 
 // a quick start that settles softly: the cover card melting into the scene, the words arriving
 private val Settle = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -112,7 +116,7 @@ private const val ControlsHideMs = 4_200L
 private const val StarWindow = 14
 
 // how far a patch of liquid smears what lies under it, in dp: a patch, never the whole picture
-private const val LiquidBlurDp = 20f
+private const val LiquidBlurDp = 18f
 
 /**
  * The Liquid player style: the laptop lock-screen look. Under everything the song's own music
@@ -305,6 +309,9 @@ private fun LiquidBackdrop(
     intro: () -> Float,
 ) {
     val fx = remember { LiquidFx() }
+    // the edge light takes its colour from the cover, eased when the song changes
+    val seed = LocalArtworkColor.current
+    val edgeColor by animateColorAsState(remember(seed) { edgeTone(seed) }, tween(900), label = "liquidEdge")
     Box(Modifier.fillMaxSize().background(Color(0xFF14111A))) {
         Box(
             Modifier
@@ -314,11 +321,11 @@ private fun LiquidBackdrop(
                     val k = intro()
                     val w = Tau / LoopSeconds
                     // a breath of drift, never still: every number turns a whole number of times in the 100 s loop
-                    val s = 1.05f + 0.012f * sin(t * w * 5f) + (1f - k) * 0.10f
+                    val s = 1.02f + 0.006f * sin(t * w * 5f) + (1f - k) * 0.08f
                     scaleX = s
                     scaleY = s
-                    translationX = size.width * 0.010f * sin(t * w * 3f)
-                    translationY = size.height * 0.010f * cos(t * w * 4f)
+                    translationX = size.width * 0.005f * sin(t * w * 3f)
+                    translationY = size.height * 0.005f * cos(t * w * 4f)
                     // a new effect on every frame, so the liquid flows instead of stepping
                     renderEffect = fx.build(size.width, size.height, t, LiquidBlurDp.dp.toPx(), 1f - k)
                 },
@@ -329,6 +336,7 @@ private fun LiquidBackdrop(
                     model = url?.resize(2160, 2160),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    filterQuality = FilterQuality.High,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -337,13 +345,15 @@ private fun LiquidBackdrop(
                     video = video,
                     isPlaying = playing,
                     glassState = null,
+                    // 1080p: sharp, and light enough for the shader to hold the display's full refresh rate
+                    autoCap = 1080,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
         }
         // phones without the shader get plain frosted patches in the same places
         if (Build.VERSION.SDK_INT < 33) FrostPatches(time)
-        LiquidEdgeLight(time)
+        LiquidEdgeLight(time, edgeColor)
     }
 }
 
@@ -373,44 +383,54 @@ private fun FrostPatches(time: () -> Float) {
     }
 }
 
+/** the cover's own colour, lifted just enough to read as light on a dark scene, never neon */
+private fun edgeTone(seed: Color): Color {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(seed.toArgb(), hsl)
+    hsl[1] = hsl[1].coerceIn(0.35f, 0.75f)
+    hsl[2] = hsl[2].coerceIn(0.55f, 0.70f)
+    return Color(ColorUtils.HSLToColor(hsl))
+}
+
 /**
- * The light the screen throws: violet along the edges (strongest at the bottom), a thin pale rim,
- * and a light shade so the words stay readable on a bright picture. It breathes slowly.
+ * The light the screen throws: a thin wash of the cover's colour along the edges (a touch more at
+ * the bottom), a hairline rim, and a light shade so the words stay readable. It breathes slowly.
  */
 @Composable
-private fun LiquidEdgeLight(time: () -> Float) {
+private fun LiquidEdgeLight(time: () -> Float, tint: Color) {
     Canvas(Modifier.fillMaxSize()) {
         val w = Tau / LoopSeconds
-        val breathe = 0.88f + 0.12f * sin(time() * w * 4f)
+        val breathe = 0.90f + 0.10f * sin(time() * w * 4f)
         drawRect(
             Brush.verticalGradient(
                 0f to Color(0x14000000),
                 0.5f to Color.Transparent,
-                1f to Color(0x59000000),
+                1f to Color(0x4D000000),
             ),
         )
+        // bottom: the widest band, still only the last ~8% of the screen
         drawRect(
             Brush.verticalGradient(
                 0f to Color.Transparent,
-                0.80f to Color.Transparent,
-                1f to Violet.copy(alpha = 0.58f * breathe),
+                0.92f to Color.Transparent,
+                1f to tint.copy(alpha = 0.30f * breathe),
             ),
         )
         drawRect(
             Brush.verticalGradient(
-                0f to Violet.copy(alpha = 0.24f * breathe),
-                0.08f to Color.Transparent,
+                0f to tint.copy(alpha = 0.10f * breathe),
+                0.035f to Color.Transparent,
             ),
         )
         drawRect(
             Brush.horizontalGradient(
-                0f to Violet.copy(alpha = 0.36f * breathe),
-                0.13f to Color.Transparent,
-                0.87f to Color.Transparent,
-                1f to Violet.copy(alpha = 0.36f * breathe),
+                0f to tint.copy(alpha = 0.14f * breathe),
+                0.045f to Color.Transparent,
+                0.955f to Color.Transparent,
+                1f to tint.copy(alpha = 0.14f * breathe),
             ),
         )
-        drawRect(Color.White.copy(alpha = 0.16f * breathe), style = Stroke(width = 3.dp.toPx()))
+        drawRect(tint.copy(alpha = 0.10f * breathe), style = Stroke(width = 1.dp.toPx()))
     }
 }
 

@@ -33,6 +33,8 @@ fun YouTubeVideoBackground(
     onFrameColors: ((List<androidx.compose.ui.graphics.Color>) -> Unit)? = null,
     // told when the video's picture is up over the cover, and when it's gone again
     onShowingChange: ((Boolean) -> Unit)? = null,
+    // the biggest short side auto may climb to; callers that run a shader over the picture ask for 1080
+    autoCap: Int = BackgroundAutoCap,
 ) {
     if (video == null) return
     // a decoder for every song skipped past ran memory past a gigabyte and got the app killed, so the video waits for the song to stay
@@ -45,7 +47,7 @@ fun YouTubeVideoBackground(
     }
     androidx.compose.runtime.DisposableEffect(session) { onDispose { currentOnShowing?.invoke(false) } }
     val playing by rememberUpdatedState(isPlaying)
-    DriveYouTubeVideo(session, video, isPlaying, autoCap = BackgroundAutoCap)
+    DriveYouTubeVideo(session, video, isPlaying, autoCap = autoCap)
     Box(modifier = modifier) {
         YouTubeVideoSurface(
             session = session,

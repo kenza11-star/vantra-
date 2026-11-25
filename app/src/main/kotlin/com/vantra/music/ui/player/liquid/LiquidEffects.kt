@@ -53,7 +53,7 @@ internal class LiquidFx {
     }
 }
 
-internal const val LiquidBlobCount = 6
+internal const val LiquidBlobCount = 3
 
 private const val Wave = 6.2831855f / 100f
 
@@ -67,9 +67,10 @@ internal fun liquidBlob(i: Int, t: Float, aspect: Float, out: FloatArray) {
     val hy = 1 + (i + 1) % 3
     val hr = 1 + i % 2
     val ph = i * 1.7f
-    out[0] = 0.5f + 0.38f * sin(t * Wave * hx + ph)
-    out[1] = aspect * (0.5f + 0.40f * sin(t * Wave * hy + ph * 1.3f + 1f))
-    out[2] = 0.18f + 0.045f * sin(t * Wave * hr + ph * 2.1f)
+    // three heavy drops, slow like syrup; each keeps to its own part of the screen so they meet only now and then
+    out[0] = 0.5f + 0.30f * sin(t * Wave * hx + ph)
+    out[1] = aspect * (0.5f + 0.32f * sin(t * Wave * hy + ph * 1.3f + 1f))
+    out[2] = 0.15f + 0.03f * sin(t * Wave * hr + ph * 2.1f)
 }
 
 private const val LiquidSource = """
@@ -81,9 +82,6 @@ uniform float melt;
 uniform float3 b0;
 uniform float3 b1;
 uniform float3 b2;
-uniform float3 b3;
-uniform float3 b4;
-uniform float3 b5;
 
 float ball(float2 q, float3 b) {
     float2 d = q - b.xy;
@@ -92,12 +90,12 @@ float ball(float2 q, float3 b) {
 
 // the thickness of the liquid: patches merging into one another, edges bent so none is a circle
 float field(float2 q) {
-    q += 0.035 * float2(sin(q.y * 7.0 + warp.x), cos(q.x * 6.0 - warp.y));
-    return ball(q, b0) + ball(q, b1) + ball(q, b2) + ball(q, b3) + ball(q, b4) + ball(q, b5);
+    q += 0.028 * float2(sin(q.y * 5.0 + warp.x), cos(q.x * 4.5 - warp.y));
+    return ball(q, b0) + ball(q, b1) + ball(q, b2);
 }
 
 float cover(float f) {
-    return smoothstep(0.9, 2.1, f);
+    return smoothstep(1.0, 2.6, f);
 }
 
 half4 main(float2 p) {
@@ -112,24 +110,24 @@ half4 main(float2 p) {
     float gx = (cover(field(q + float2(e / s, 0.0))) - f0) / e;
     float gy = (cover(field(q + float2(0.0, e / s))) - f0) / e;
     float2 g = float2(gx, gy);
-    float2 pc = p - g * 900.0 * (1.0 - melt);
+    float2 pc = p - g * 520.0 * (1.0 - melt);
 
     // a thick smear: a disc of taps, turned a different way at every pixel so it reads as grain, not as ghosts
     float radius = blurPx * m * (1.0 + 0.7 * melt);
     float turn = 6.2831853 * fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715))));
     half4 acc = half4(0.0);
-    for (int i = 0; i < 24; i++) {
+    for (int i = 0; i < 20; i++) {
         float fi = float(i) + 0.5;
-        float rr = sqrt(fi / 24.0) * radius;
+        float rr = sqrt(fi / 20.0) * radius;
         float th = fi * 2.3999632 + turn;
         acc += image.eval(pc + rr * float2(cos(th), sin(th)));
     }
-    half4 c = acc / 24.0;
+    half4 c = acc / 20.0;
 
     // frost inside, and a thin light where the liquid is steepest
-    float rim = clamp(length(g) * 60.0, 0.0, 1.0) * (1.0 - melt);
-    float3 col = mix(float3(c.rgb), float3(1.0), 0.06 * m);
-    col += float3(0.78, 0.72, 1.0) * rim * 0.12;
+    float rim = clamp(length(g) * 45.0, 0.0, 1.0) * (1.0 - melt);
+    float3 col = mix(float3(c.rgb), float3(1.0), 0.03 * m);
+    col += float3(1.0) * rim * 0.05;
     return half4(half3(col), c.a);
 }
 """
