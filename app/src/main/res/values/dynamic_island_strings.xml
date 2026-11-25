@@ -31,4 +31,19 @@
     <string name="dynamic_island_full_settings">Full Dynamic Island settings</string>
     <string name="dynamic_island_full_settings_sub">Look, animations, gestures, lyrics, banners and more</string>
     <string name="dynamic_island_unsupported">Dynamic Island needs Android 8.0 or newer.</string>
+    <string name="dynamic_island_notifications">Notifications from other apps</string>
+    <string name="dynamic_island_notif_apps">Show app notifications</string>
+    <string name="dynamic_island_notif_apps_sub">WhatsApp, Telegram, TikTok, Instagram and more</string>
+    <string name="dynamic_island_notif_quiet">Include silent notifications</string>
+    <string name="dynamic_island_notif_quiet_sub">Many apps send quiet notifications that Android does not pop up</string>
+    <string name="dynamic_island_notif_connected">Notification listener is connected</string>
+    <string name="dynamic_island_notif_disconnected">Notification listener is not connected yet</string>
+    <string name="dynamic_island_notif_reconnect">Reconnect</string>
+    <string name="dynamic_island_notif_reconnect_sub">Ask Android to reconnect the notification listener</string>
+    <string name="dynamic_island_restricted">Allow restricted settings</string>
+    <string name="dynamic_island_restricted_sub">If Notification access is greyed out: open App info, tap the three dots, then Allow restricted settings</string>
+    <string name="dynamic_island_notif_choose">Choose apps</string>
+    <string name="dynamic_island_notif_choose_sub">Always show or never show for each app</string>
+    <string name="dynamic_island_notif_diag">Why was a notification not shown?</string>
+    <string name="dynamic_island_notif_diag_sub">Shows the reason for every notification that was skipped</string>
 </resources>

@@ -400,9 +400,30 @@ data class IslandSettings(
      */
     val historyMinutes: Int = 0,
     /** Показывать и тихие уведомления — те, что система не показывает всплывающими (как у Snapchat и многих приложений) */
-    val msgQuiet: Boolean = false,
+    val msgQuiet: Boolean = true,
     /** Свои правила приложений: всегда показывать или никогда */
-    val msgAppRules: Map<String, AppRule> = emptyMap(),
+    val msgAppRules: Map<String, AppRule> = mapOf(
+        "com.whatsapp" to AppRule.ALWAYS,
+        "com.whatsapp.w4b" to AppRule.ALWAYS,
+        "org.telegram.messenger" to AppRule.ALWAYS,
+        "org.telegram.messenger.web" to AppRule.ALWAYS,
+        "org.thunderdog.challegram" to AppRule.ALWAYS,
+        "com.zhiliaoapp.musically" to AppRule.ALWAYS,
+        "com.ss.android.ugc.trill" to AppRule.ALWAYS,
+        "com.instagram.android" to AppRule.ALWAYS,
+        "com.instagram.barcelona" to AppRule.ALWAYS,
+        "com.facebook.orca" to AppRule.ALWAYS,
+        "com.facebook.katana" to AppRule.ALWAYS,
+        "com.facebook.lite" to AppRule.ALWAYS,
+        "com.discord" to AppRule.ALWAYS,
+        "com.twitter.android" to AppRule.ALWAYS,
+        "com.google.android.gm" to AppRule.ALWAYS,
+        "jp.naver.line.android" to AppRule.ALWAYS,
+        "org.thoughtcrime.securesms" to AppRule.ALWAYS,
+        "com.snapchat.android" to AppRule.ALWAYS,
+        "com.google.android.apps.messaging" to AppRule.ALWAYS,
+        "com.samsung.android.messaging" to AppRule.ALWAYS,
+    ),
     /** Остров на экране блокировки */
     val lockScreen: LockScreenMode = LockScreenMode.SHOW,
     /** Остров в альбомной ориентации; заменяет «Скрывать в альбомной ориентации» */

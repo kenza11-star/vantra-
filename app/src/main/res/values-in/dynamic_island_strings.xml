@@ -31,4 +31,19 @@
     <string name="dynamic_island_full_settings">Pengaturan Dynamic Island lengkap</string>
     <string name="dynamic_island_full_settings_sub">Tampilan, animasi, gestur, lirik, banner, dan lainnya</string>
     <string name="dynamic_island_unsupported">Dynamic Island membutuhkan Android 8.0 atau lebih baru.</string>
+    <string name="dynamic_island_notifications">Notifikasi dari aplikasi lain</string>
+    <string name="dynamic_island_notif_apps">Tampilkan notifikasi aplikasi</string>
+    <string name="dynamic_island_notif_apps_sub">WhatsApp, Telegram, TikTok, Instagram, dan lainnya</string>
+    <string name="dynamic_island_notif_quiet">Sertakan notifikasi senyap</string>
+    <string name="dynamic_island_notif_quiet_sub">Banyak aplikasi mengirim notifikasi senyap yang tidak dimunculkan Android</string>
+    <string name="dynamic_island_notif_connected">Pendengar notifikasi terhubung</string>
+    <string name="dynamic_island_notif_disconnected">Pendengar notifikasi belum terhubung</string>
+    <string name="dynamic_island_notif_reconnect">Sambungkan ulang</string>
+    <string name="dynamic_island_notif_reconnect_sub">Minta Android menyambungkan ulang pendengar notifikasi</string>
+    <string name="dynamic_island_restricted">Izinkan setelan terbatas</string>
+    <string name="dynamic_island_restricted_sub">Jika Akses notifikasi berwarna abu-abu: buka Info aplikasi, ketuk titik tiga, lalu Izinkan setelan terbatas</string>
+    <string name="dynamic_island_notif_choose">Pilih aplikasi</string>
+    <string name="dynamic_island_notif_choose_sub">Selalu tampilkan atau jangan tampilkan per aplikasi</string>
+    <string name="dynamic_island_notif_diag">Kenapa notifikasi tidak tampil?</string>
+    <string name="dynamic_island_notif_diag_sub">Menampilkan alasan setiap notifikasi yang dilewati</string>
 </resources>

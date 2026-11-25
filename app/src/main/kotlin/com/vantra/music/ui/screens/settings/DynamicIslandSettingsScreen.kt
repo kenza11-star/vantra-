@@ -40,6 +40,7 @@ import com.vantra.music.R
 import com.vantra.music.island.IslandRuntime
 import com.vantra.music.island.core.IslandBus
 import com.vantra.music.island.data.SettingsRepo
+import com.vantra.music.island.service.NotifListener
 import com.vantra.music.island.ui.DynamicIslandActivity
 import com.vantra.music.island.ui.Perms
 import com.vantra.music.island.ui.Screen
@@ -66,6 +67,7 @@ fun DynamicIslandSettingsScreen(navController: NavController) {
     val battery = remember(tick) { Perms.batteryUnrestricted(context) }
     val calls = remember(tick) { Perms.calls(context) }
     val bluetooth = remember(tick) { Perms.bluetooth(context) }
+    val listenerConnected = remember(tick) { NotifListener.isConnected }
     val post = remember(tick) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasRuntime(context, Manifest.permission.POST_NOTIFICATIONS)
     }
@@ -152,6 +154,53 @@ fun DynamicIslandSettingsScreen(navController: NavController) {
                     stringResource(R.string.dynamic_island_perm_bluetooth_sub),
                     bluetooth,
                 ) { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) askBluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT) }
+            }
+
+            SectionLabel(stringResource(R.string.dynamic_island_notifications))
+            LabCard {
+                LabToggleRow(
+                    title = stringResource(R.string.dynamic_island_notif_apps),
+                    subtitle = stringResource(R.string.dynamic_island_notif_apps_sub),
+                    checked = settings.cardMessages,
+                    onCheckedChange = { on -> SettingsRepo.update { copy(cardMessages = on) } },
+                )
+                LabToggleRow(
+                    title = stringResource(R.string.dynamic_island_notif_quiet),
+                    subtitle = stringResource(R.string.dynamic_island_notif_quiet_sub),
+                    checked = settings.msgQuiet,
+                    onCheckedChange = { on -> SettingsRepo.update { copy(msgQuiet = on) } },
+                )
+                Text(
+                    text = stringResource(
+                        if (listenerConnected) R.string.dynamic_island_notif_connected else R.string.dynamic_island_notif_disconnected,
+                    ),
+                    color = if (listenerConnected) Granted else LabColors.Secondary,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                )
+                if (listener && !listenerConnected) {
+                    LinkRow(
+                        stringResource(R.string.dynamic_island_notif_reconnect),
+                        stringResource(R.string.dynamic_island_notif_reconnect_sub),
+                    ) {
+                        NotifListener.requestReconnect(context)
+                        tick++
+                    }
+                }
+                if (!listener) {
+                    LinkRow(
+                        stringResource(R.string.dynamic_island_restricted),
+                        stringResource(R.string.dynamic_island_restricted_sub),
+                    ) { Perms.openAppDetails(context) }
+                }
+                LinkRow(
+                    stringResource(R.string.dynamic_island_notif_choose),
+                    stringResource(R.string.dynamic_island_notif_choose_sub),
+                ) { context.startActivity(DynamicIslandActivity.intent(context, Screen.NOTIF_APPS)) }
+                LinkRow(
+                    stringResource(R.string.dynamic_island_notif_diag),
+                    stringResource(R.string.dynamic_island_notif_diag_sub),
+                ) { context.startActivity(DynamicIslandActivity.intent(context, Screen.NOTIF_DIAG)) }
             }
 
             SectionLabel(stringResource(R.string.dynamic_island_more))
