@@ -19,8 +19,8 @@ import com.vantra.music.ui.utils.rememberSettled
 /** how long a song has to stay before its video starts */
 private const val VideoSettleMs = 700L
 
-// behind lyrics and under a blur, auto never needs more than this
-private const val BackgroundAutoCap = 720
+// full quality: the picture is the player's background now, so auto may climb to 4K (the decoder still decides what it can play)
+private const val BackgroundAutoCap = 2160
 
 @Composable
 fun YouTubeVideoBackground(

@@ -1,5 +1,6 @@
 package com.vantra.music.ui.player.liquid
 
+import com.vantra.music.ui.utils.resize
 import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -324,7 +325,8 @@ private fun LiquidBackdrop(
         ) {
             Crossfade(targetState = cover, animationSpec = tween(1100), label = "liquidCover") { url ->
                 AsyncImage(
-                    model = url,
+                    // the biggest version of the cover there is: it fills a whole (sideways) screen
+                    model = url?.resize(2160, 2160),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

@@ -1327,9 +1327,9 @@ private fun CoverPicture(thumbnailUrl: String?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val imageRequest = remember(thumbnailUrl) {
         ImageRequest.Builder(context)
-            .data(thumbnailUrl?.resize(1200, 1200))
+            .data(thumbnailUrl?.resize(2160, 2160))
             .allowHardware(true)
-            .size(CoilSize(1200, 1200))
+            .size(CoilSize(2160, 2160))
             .precision(Precision.INEXACT)
             .crossfade(false)
             .build()

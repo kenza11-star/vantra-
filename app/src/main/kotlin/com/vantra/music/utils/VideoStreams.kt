@@ -57,16 +57,23 @@ internal fun PlayerResponse.StreamingData.Format.ByteRange.toLongRange(): LongRa
 // h264 has a hardware decoder on every phone, so it wins; vp9 and av1 only stand in for a video that has no h264
 private val CodecFamilies = listOf("avc1", "vp9", "vp09", "av01")
 
-// the picture-only formats of one codec, one per size, smallest first; 30fps beats 60 at the same size, it's half the decoding behind lyrics
+// the picture-only formats of one codec, one per size, smallest first; the highest frame rate (then bitrate) wins at the same size.
+// h264 stays first because every phone decodes it in hardware, but it stops at 1080p: when another codec reaches a clearly
+// bigger picture (1440p / 4K), that one is used so the background can be as sharp as the video allows
 internal fun pickVideoFamily(formats: List<PlayerResponse.StreamingData.Format>): List<PlayerResponse.StreamingData.Format> {
     val pictures = formats.filter { !it.isAudio && (it.width ?: 0) > 0 && (it.height ?: 0) > 0 && it.bitrate > 0 }
-    for (family in CodecFamilies) {
+    val families = CodecFamilies.mapNotNull { family ->
         val inFamily = pictures.filter { it.codecs().startsWith(family) }
-        if (inFamily.isEmpty()) continue
-        return inFamily
+        if (inFamily.isEmpty()) return@mapNotNull null
+        inFamily
             .groupBy { minOf(it.width!!, it.height!!) }
-            .map { (_, sameSize) -> sameSize.minWith(compareBy({ it.fps ?: 30 }, { it.bitrate })) }
+            .map { (_, sameSize) -> sameSize.maxWith(compareBy({ it.fps ?: 30 }, { it.bitrate })) }
             .sortedBy { minOf(it.width!!, it.height!!) }
     }
-    return emptyList()
+    if (families.isEmpty()) return emptyList()
+    val first = families.first()
+    val best = families.maxBy { f -> f.maxOf { minOf(it.width!!, it.height!!) } }
+    val firstTop = first.maxOf { minOf(it.width!!, it.height!!) }
+    val bestTop = best.maxOf { minOf(it.width!!, it.height!!) }
+    return if (bestTop >= 1440 && bestTop > firstTop) best else first
 }

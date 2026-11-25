@@ -758,7 +758,24 @@ fun RotatingFrame(
             ),
     ) {
         if (background != null) {
-            Box(modifier = Modifier.fillMaxSize(), content = background)
+            // the picture under the style turns with it: sideways, the video or cover fills the sideways screen
+            // (measured landscape, then turned) instead of staying upright behind it. One copy only, so a video
+            // keeps a single decoder through the turn; it is scaled just enough to cover the corners meanwhile.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .quarterTurn(shown)
+                    .graphicsLayer {
+                        if (leaving == null) return@graphicsLayer
+                        val direction = if (shown) 1f else -1f
+                        val angle = -direction * 90f * (1f - turn.value)
+                        rotationZ = angle
+                        val s = coverScale(size.width, size.height, if (shown) 90f else 0f, angle)
+                        scaleX = s
+                        scaleY = s
+                    },
+                content = background,
+            )
         }
         androidx.compose.runtime.CompositionLocalProvider(LocalStyleSplits provides splits) {
             val layers = listOfNotNull(leaving, shown)
@@ -819,6 +836,30 @@ internal fun turnFit(w: Float, h: Float, restAngle: Float, angle: Float): Float 
     val extentW = w * c + h * s
     val extentH = w * s + h * c
     return minOf(screenW / extentW, screenH / extentH, 1f)
+}
+
+/**
+ * How far a picture laid out for the screen ([screenW] x [screenH]) as it rests at [restAngle] must grow, turned a further
+ * [angle] degrees, to still cover the whole screen.
+ */
+internal fun coverScale(screenW: Float, screenH: Float, restAngle: Float, angle: Float): Float {
+    if (screenW <= 0f || screenH <= 0f) return 1f
+    val sideways = restAngle != 0f
+    val halfW = (if (sideways) screenH else screenW) / 2f
+    val halfH = (if (sideways) screenW else screenH) / 2f
+    val a = Math.toRadians((restAngle + angle).toDouble())
+    val c = kotlin.math.cos(a).toFloat()
+    val s = kotlin.math.sin(a).toFloat()
+    var need = 1f
+    for (sx in floatArrayOf(-1f, 1f)) for (sy in floatArrayOf(-1f, 1f)) {
+        val px = sx * screenW / 2f
+        val py = sy * screenH / 2f
+        // the corner, seen from the picture's own turned frame
+        val x = px * c + py * s
+        val y = -px * s + py * c
+        need = maxOf(need, abs(x) / halfW, abs(y) / halfH)
+    }
+    return need
 }
 
 internal fun sin01(t: Float): Float = kotlin.math.sin(Math.PI.toFloat() * t.coerceIn(0f, 1f))

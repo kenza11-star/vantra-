@@ -416,6 +416,8 @@ val DisableVideoAutoplayKey = booleanPreferencesKey("disableVideoAutoplay")
 // how sharp youtube videos play; auto drops to a lower picture when the connection slows down instead of freezing
 enum class VideoQuality(val shortSide: Int) {
     AUTO(0),
+    Q2160(2160),
+    Q1440(1440),
     Q1080(1080),
     Q720(720),
     Q480(480),

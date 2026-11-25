@@ -320,9 +320,9 @@ internal class CanvasVideoSession(
                 .apply {
                     trackSelectionParameters = trackSelectionParameters
                         .buildUpon()
-                        .setMaxVideoSize(1280, 1280)
-                        .setMaxVideoBitrate(2_500_000)
-                        .setForceHighestSupportedBitrate(false)
+                        .setMaxVideoSize(3840, 3840)
+                        .setMaxVideoBitrate(Int.MAX_VALUE)
+                        .setForceHighestSupportedBitrate(true)
                         .build()
                     setAudioAttributes(
                         AudioAttributes
