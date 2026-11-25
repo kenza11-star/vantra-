@@ -666,7 +666,7 @@ enum class PlayerStyle(val displayName: String, val selectorName: String) {
     val isBedside: Boolean get() = this == BEDSIDE || this == BEDSIDE_TILES
 
     // laid out sideways until someone turns it upright, the way a phone stands on a nightstand
-    val startsSideways: Boolean get() = this == BEDSIDE_TILES || this == LIQUID
+    val startsSideways: Boolean get() = this == BEDSIDE_TILES
 
     /** drawn by the flagship's own player (cover, controls, card), not a design of its own */
     val flagshipFamily: Boolean get() = this == FLAGSHIP || this == CLASSIC || this == TURNTABLE
@@ -848,7 +848,10 @@ val BedsideMusicTilePageKey = intPreferencesKey("bedsideMusicTilePage")
 val BedsideInfoTilePageKey = intPreferencesKey("bedsideInfoTilePage")
 
 /** whether [style] is shown turned sideways (its content rotated a quarter turn) */
-fun playerStyleRotatedKey(style: PlayerStyle) = booleanPreferencesKey("playerStyleRotated_${style.name}")
+// Liquid moved from sideways to upright by default, so it has a fresh key and nobody keeps the old default
+fun playerStyleRotatedKey(style: PlayerStyle) = booleanPreferencesKey(
+    if (style == PlayerStyle.LIQUID) "playerStyleRotated_LIQUID_v2" else "playerStyleRotated_${style.name}",
+)
 
 /** what the timestamp at the right of the seek bar shows */
 enum class PlayerEndTimestamp { END_TIME, TIME_LEFT }

@@ -1,5 +1,6 @@
 package com.vantra.music.ui.player.liquid
 
+import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
@@ -109,18 +110,16 @@ private const val IntroHoldMs = 320L
 private const val ControlsHideMs = 4_200L
 private const val StarWindow = 14
 
-// blur, in dp: the cover alone is melted past recognition, a video stays a scene you can follow
-private const val CoverBlurDp = 46f
-private const val VideoBlurDp = 15f
-private const val IntroExtraBlurDp = 38f
+// how far a patch of liquid smears what lies under it, in dp: a patch, never the whole picture
+private const val LiquidBlurDp = 20f
 
 /**
  * The Liquid player style: the laptop lock-screen look. Under everything the song's own music
- * video plays (a song with no video shows its cover instead), blurred and pushed round like liquid
- * glass with a violet light along its edges. Over it a big serif clock, and the words of the song
+ * video plays (a song with no video shows its cover instead), kept sharp, with a few thick patches of
+ * liquid drifting over it, and a violet light along the screen's edges. Over it a big serif clock, and the words of the song
  * set in the lyric look picked in the selector's Edit sheet (or from the Aa button): a star map
- * that grows word by word, big kinetic lines, karaoke or one quiet line. It turns sideways by
- * default, like a laptop lid, and every new song melts in from a small cover card.
+ * that grows word by word, big kinetic lines, karaoke or one quiet line. It stands upright, and can be
+ * turned sideways from the ••• menu; every new song melts in from a small cover card.
  */
 @Composable
 fun LiquidPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, preview: Boolean = false) {
@@ -168,8 +167,6 @@ fun LiquidPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, prev
     val web = remember(graph) { webLinks(graph) }
     val entries = remember(rawLyrics) { syncedLines(rawLyrics) }
 
-    var videoShowing by remember(mediaId) { mutableStateOf(false) }
-
     StyleFrame(
         style = PlayerStyle.LIQUID,
         preview = preview,
@@ -183,8 +180,6 @@ fun LiquidPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, prev
                 preview = preview,
                 time = time,
                 intro = { intro.value },
-                videoShowing = videoShowing,
-                onVideoShowing = { videoShowing = it },
             )
         },
     ) { landscape, menuOpen, setMenuOpen, rotated, setRotated ->
@@ -294,9 +289,10 @@ fun LiquidPlayerStyle(actions: StyleActions, modifier: Modifier = Modifier, prev
 // ---- the picture under everything ---------------------------------------------------------
 
 /**
- * The song's video if it has one, else its cover: both sit in one layer that is blurred, warped
- * and slowly drifted together, so the cover turning into the video is a soft cross-dissolve and
- * the blur eases from "melted" to "a scene" as the first picture arrives.
+ * The song's video if it has one, else its cover, kept sharp and whole. A few thick patches of
+ * liquid ([LiquidFx]) drift over it, smearing only what they cover; the picture itself barely
+ * moves. A new song starts melted all over and the liquid draws back into its patches as the
+ * first picture settles.
  */
 @Composable
 private fun LiquidBackdrop(
@@ -306,15 +302,8 @@ private fun LiquidBackdrop(
     preview: Boolean,
     time: () -> Float,
     intro: () -> Float,
-    videoShowing: Boolean,
-    onVideoShowing: (Boolean) -> Unit,
 ) {
     val fx = remember { LiquidFx() }
-    val blurDp = animateFloatAsState(
-        targetValue = if (videoShowing) VideoBlurDp else CoverBlurDp,
-        animationSpec = tween(1400),
-        label = "liquidBlur",
-    )
     Box(Modifier.fillMaxSize().background(Color(0xFF14111A))) {
         Box(
             Modifier
@@ -323,16 +312,14 @@ private fun LiquidBackdrop(
                     val t = time()
                     val k = intro()
                     val w = Tau / LoopSeconds
-                    // drifting, never still: every number turns a whole number of times in the 100 s loop
-                    val s = 1.34f + 0.05f * sin(t * w * 5f) + (1f - k) * 0.22f
+                    // a breath of drift, never still: every number turns a whole number of times in the 100 s loop
+                    val s = 1.05f + 0.012f * sin(t * w * 5f) + (1f - k) * 0.10f
                     scaleX = s
                     scaleY = s
-                    translationX = size.width * 0.03f * sin(t * w * 3f)
-                    translationY = size.height * 0.03f * cos(t * w * 4f)
-                    rotationZ = 2.2f * sin(t * w * 2f)
-                    val blur = (blurDp.value + (1f - k) * IntroExtraBlurDp).dp.toPx()
-                    // 30 steps a second are plenty for a drift this slow, and a new effect is built only on a step
-                    renderEffect = fx.build(size.width, size.height, floor(t * 30f) / 30f, blur)
+                    translationX = size.width * 0.010f * sin(t * w * 3f)
+                    translationY = size.height * 0.010f * cos(t * w * 4f)
+                    // a new effect on every frame, so the liquid flows instead of stepping
+                    renderEffect = fx.build(size.width, size.height, t, LiquidBlurDp.dp.toPx(), 1f - k)
                 },
         ) {
             Crossfade(targetState = cover, animationSpec = tween(1100), label = "liquidCover") { url ->
@@ -349,40 +336,79 @@ private fun LiquidBackdrop(
                     isPlaying = playing,
                     glassState = null,
                     modifier = Modifier.fillMaxSize(),
-                    onShowingChange = onVideoShowing,
                 )
             }
         }
-        // frost over the glass, then the violet light along the edges the way the lid catches it
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
+        // phones without the shader get plain frosted patches in the same places
+        if (Build.VERSION.SDK_INT < 33) FrostPatches(time)
+        LiquidEdgeLight(time)
+    }
+}
+
+/** frosted patches over the picture, on the paths the liquid takes, for Android 12 and older */
+@Composable
+private fun FrostPatches(time: () -> Float) {
+    val blob = remember { FloatArray(3) }
+    Canvas(Modifier.fillMaxSize()) {
+        val t = time()
+        val aspect = size.height / size.width
+        for (i in 0 until LiquidBlobCount) {
+            liquidBlob(i, t, aspect, blob)
+            val center = Offset(blob[0] * size.width, blob[1] * size.width)
+            val radius = blob[2] * size.width * 1.15f
+            drawCircle(
+                brush = Brush.radialGradient(
                     0f to Color(0x2EFFFFFF),
-                    0.45f to Color(0x10FFFFFF),
-                    1f to Color(0x70000000),
+                    0.7f to Color(0x14FFFFFF),
+                    1f to Color.Transparent,
+                    center = center,
+                    radius = radius,
                 ),
+                radius = radius,
+                center = center,
+            )
+        }
+    }
+}
+
+/**
+ * The light the screen throws: violet along the edges (strongest at the bottom), a thin pale rim,
+ * and a light shade so the words stay readable on a bright picture. It breathes slowly.
+ */
+@Composable
+private fun LiquidEdgeLight(time: () -> Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        val w = Tau / LoopSeconds
+        val breathe = 0.88f + 0.12f * sin(time() * w * 4f)
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color(0x14000000),
+                0.5f to Color.Transparent,
+                1f to Color(0x59000000),
             ),
         )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to Violet.copy(alpha = 0.14f),
-                    0.10f to Color.Transparent,
-                    0.86f to Color.Transparent,
-                    1f to Violet.copy(alpha = 0.42f),
-                ),
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Transparent,
+                0.80f to Color.Transparent,
+                1f to Violet.copy(alpha = 0.58f * breathe),
             ),
         )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(
-                    0f to Violet.copy(alpha = 0.20f),
-                    0.07f to Color.Transparent,
-                    0.93f to Color.Transparent,
-                    1f to Violet.copy(alpha = 0.20f),
-                ),
+        drawRect(
+            Brush.verticalGradient(
+                0f to Violet.copy(alpha = 0.24f * breathe),
+                0.08f to Color.Transparent,
             ),
         )
+        drawRect(
+            Brush.horizontalGradient(
+                0f to Violet.copy(alpha = 0.36f * breathe),
+                0.13f to Color.Transparent,
+                0.87f to Color.Transparent,
+                1f to Violet.copy(alpha = 0.36f * breathe),
+            ),
+        )
+        drawRect(Color.White.copy(alpha = 0.16f * breathe), style = Stroke(width = 3.dp.toPx()))
     }
 }
 
