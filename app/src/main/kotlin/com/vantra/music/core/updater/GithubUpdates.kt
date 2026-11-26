@@ -22,7 +22,7 @@ const val GithubRepoUrl = "https://github.com/$GithubOwner/$GithubRepo"
  * Your Vercel update site (the page where you upload the APK and press Send). Put your own address here.
  * Releases come from there first; GitHub is only the fallback when the site is blank, down or empty.
  */
-const val UpdateServerUrl = "https://vantra-update.vercel.app"
+const val UpdateServerUrl = "https://vantra-s.vercel.app"
 
 private const val ReleasesApi =
     "https://api.github.com/repos/$GithubOwner/$GithubRepo/releases?per_page=20"
