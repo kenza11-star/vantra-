@@ -22,7 +22,7 @@ const val GithubRepoUrl = "https://github.com/$GithubOwner/$GithubRepo"
  * Your Vercel update site (the page where you upload the APK and press Send). Put your own address here.
  * Releases come from there first; GitHub is only the fallback when the site is blank, down or empty.
  */
-const val UpdateServerUrl = "updated-mu-orcin.vercel.app"
+const val UpdateServerUrl = "https://updated-mu-orcin.vercel.app"
 
 private const val ReleasesApi =
     "https://api.github.com/repos/$GithubOwner/$GithubRepo/releases?per_page=20"
@@ -261,14 +261,19 @@ suspend fun downloadApk(
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", "vantra-android")
         }
+        val code = connection.responseCode
+        if (code !in 200..299) error("The update server answered HTTP $code")
+        if (connection.contentType.orEmpty().startsWith("text/html", ignoreCase = true)) {
+            error("That link is a web page, not an APK file")
+        }
         val total = release.apkSizeBytes.takeIf { it > 0 }
             ?: connection.contentLengthLong.takeIf { it > 0 }
             ?: -1L
 
+        var written = 0L
         connection.inputStream.use { input ->
             target.outputStream().use { output ->
                 val buffer = ByteArray(64 * 1024)
-                var written = 0L
                 while (true) {
                     val read = input.read(buffer)
                     if (read == -1) break
@@ -277,6 +282,11 @@ suspend fun downloadApk(
                     if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
                 }
             }
+        }
+        // a cut connection must never be handed to the installer as if it were the whole file
+        if (written <= 0L || (total > 0 && written != total)) {
+            target.delete()
+            error("Download was cut off, try again")
         }
         onProgress(1f)
         target

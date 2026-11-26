@@ -724,10 +724,20 @@ fun ProfileScreen(navController: NavController) {
                             zoomOutState.dismissAll()
                             navController.navigate("developer_space?person=$personIndex")
                         }
+                        // a version sent from the update site turns the capsule into "Update"; tapping it opens the
+                        // sheet where Install downloads with a percentage and then installs on its own
+                        val available = updateState as? com.vantra.music.core.updater.UpdateState.Available
+                        val openVersionSheet: () -> Unit = {
+                            if (available != null) {
+                                zoomOutState.showUpdateSheet(available, onOpenDevSpace = openDevSpace)
+                            } else {
+                                zoomOutState.showAboutSheet(onOpenDevSpace = openDevSpace)
+                            }
+                        }
                         VersionCard(
-                            updateHeadline = null,
-                            onCardClick = { zoomOutState.showAboutSheet(onOpenDevSpace = openDevSpace) },
-                            onPillClick = { zoomOutState.showAboutSheet(onOpenDevSpace = openDevSpace) },
+                            updateHeadline = available?.let { "${it.release.version} is out, tap to update" },
+                            onCardClick = openVersionSheet,
+                            onPillClick = openVersionSheet,
                         )
                         Spacer(Modifier.height(16.dp))
                         DeveloperCard(onClick = { navController.navigate("developer_space") })

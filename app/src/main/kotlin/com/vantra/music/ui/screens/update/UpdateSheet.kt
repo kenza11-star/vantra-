@@ -48,6 +48,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,10 +96,38 @@ import com.vantra.music.ui.player.menu.MenuSurface
 import com.vantra.music.ui.screens.donate.showSupportSheet
 import kotlinx.coroutines.launch
 
+// one shared answer for every screen that asks (version card, home prompt, sheet), so they always agree
+private val liveUpdate = MutableStateFlow<UpdateState>(UpdateState.UpToDate)
+private var lastLiveCheck = 0L
+
+private suspend fun refreshLiveUpdate() {
+    val now = System.currentTimeMillis()
+    synchronized(liveUpdate) {
+        if (now - lastLiveCheck < 15_000L) return
+        lastLiveCheck = now
+    }
+    val result = checkUpdate(force = true)
+    // offline or a hiccup keeps what is already known; only a real answer replaces it
+    if (result !is UpdateState.Failed) liveUpdate.value = result
+}
+
+/**
+ * Live: asks the update server when the app is opened or resumed, then every 30 s while it stays
+ * on screen. A version sent from the update site shows up here within seconds, no restart needed.
+ */
 @Composable
 fun rememberUpdateState(): androidx.compose.runtime.State<UpdateState> {
-    // Vantra has no release feed yet, so nothing is checked and no "update" text ever shows
-    return remember { mutableStateOf<UpdateState>(UpdateState.UpToDate) }
+    var resumed by remember { mutableStateOf(true) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumed = true }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { resumed = false }
+    LaunchedEffect(resumed) {
+        if (!resumed) return@LaunchedEffect
+        while (true) {
+            refreshLiveUpdate()
+            delay(30_000L)
+        }
+    }
+    return liveUpdate.collectAsState()
 }
 
 /** asks github (or the shared copy, unless force is set) whether a newer release is out */
@@ -107,7 +140,7 @@ private suspend fun checkUpdate(force: Boolean): UpdateState =
                 else -> UpdateState.UpToDate
             }
         },
-        onFailure = { UpdateState.Failed(it.message ?: "Couldn't reach GitHub") },
+        onFailure = { UpdateState.Failed(it.message ?: "Couldn't reach the update server") },
     )
 
 /** shows the app version sheet as a PopupSheet, see docs/popup-sheet.skill.md */
