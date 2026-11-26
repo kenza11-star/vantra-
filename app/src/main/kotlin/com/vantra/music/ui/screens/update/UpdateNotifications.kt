@@ -87,7 +87,7 @@ private fun postNotification(context: Context, release: GithubRelease): Boolean 
     val summary = changelogSummaryLine(release.body).ifBlank { "Tap to see what's new." }
     val notification = NotificationCompat.Builder(context, ChannelId)
         .setSmallIcon(R.drawable.vantra_notification)
-        .setContentTitle("Vantra ${release.version} is out")
+        .setContentTitle("Vantra update ${release.version}")
         .setContentText(summary)
         .setStyle(NotificationCompat.BigTextStyle().bigText(summary))
         .setContentIntent(pending)

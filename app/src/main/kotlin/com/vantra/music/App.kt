@@ -207,6 +207,8 @@ class App : Application(), SingletonImageLoader.Factory {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(channel)
         }
+        // finds a release sent from the update site while the app is closed, and notifies
+        com.vantra.music.core.updater.scheduleUpdateChecks(this)
     }
 
     private fun observeSettingsChanges() {

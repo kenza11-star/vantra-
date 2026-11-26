@@ -18,6 +18,12 @@ const val GithubRepo = "Vantra"
 const val GithubProfileUrl = "https://github.com/$GithubOwner"
 const val GithubRepoUrl = "https://github.com/$GithubOwner/$GithubRepo"
 
+/**
+ * Your Vercel update site (the page where you upload the APK and press Send). Put your own address here.
+ * Releases come from there first; GitHub is only the fallback when the site is blank, down or empty.
+ */
+const val UpdateServerUrl = "https://vantra-update.vercel.app"
+
 private const val ReleasesApi =
     "https://api.github.com/repos/$GithubOwner/$GithubRepo/releases?per_page=20"
 
@@ -124,9 +130,17 @@ suspend fun getPreviousRelease(force: Boolean = false): Result<GithubRelease?> {
     }
 }
 
-private suspend fun fetchReleases(): Result<List<ParsedRelease>> = withContext(Dispatchers.IO) {
+private suspend fun fetchReleases(): Result<List<ParsedRelease>> {
+    if (UpdateServerUrl.isNotBlank()) {
+        val own = fetchFrom("${UpdateServerUrl.trimEnd('/')}/api/releases")
+        if (own.getOrNull()?.isNotEmpty() == true) return own
+    }
+    return fetchFrom(ReleasesApi)
+}
+
+private suspend fun fetchFrom(url: String): Result<List<ParsedRelease>> = withContext(Dispatchers.IO) {
     runCatching {
-        val connection = (URL(ReleasesApi).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
             readTimeout = 12_000
             setRequestProperty("Accept", "application/vnd.github+json")
